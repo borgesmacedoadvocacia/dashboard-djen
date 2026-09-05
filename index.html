@@ -900,6 +900,29 @@
     </section>
 
     <section class="secao">
+      <div class="secao-titulo">Processos fora da base do DataJud</div>
+      <div class="secao-sub" id="subFora">—</div>
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Providência</span>
+        <div class="filtros">
+          <button type="button" class="chip" id="foraCopiar">Copiar números</button>
+          <button type="button" class="chip" id="foraCSV">Exportar XLSX</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tabela-wrap">
+          <table id="tabelaFora">
+            <thead><tr>
+              <th>Processo</th><th>Tribunal</th><th>Órgão julgador</th><th>Classe</th>
+              <th>Publicações</th><th>Primeira</th><th>Última</th>
+            </tr></thead>
+            <tbody id="corpoFora"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="secao">
       <div class="secao-titulo">Volume publicado</div>
       <div class="secao-sub">Onde está o movimento. Queda abrupta costuma ser falha de coleta, não calmaria.</div>
       <div class="card"><div class="grafico-box alto"><canvas id="grafTendencia"></canvas></div></div>
@@ -3073,6 +3096,91 @@ function renderDivergencia(f) {
   if (vis.length) tabelaClicavel('corpoDivergencia', vis, fichaPub);
 }
 
+/* Processos que saíram no diário e não existem na Base geral do DataJud.
+   São o furo de cadastro: enquanto ficarem fora, nenhum indicador por produto,
+   por cliente ou por resultado os enxerga — e o processo anda sem ninguém ver. */
+function processosForaDaBase(f) {
+  const m = new Map();
+  for (const p of f) {
+    if (!p.orfa || !p.processoDigitos) continue;
+    const at = m.get(p.processoDigitos);
+    if (!at) {
+      m.set(p.processoDigitos, { numero: p.processo, tribunal: p.tribunal, orgao: p.orgao,
+                                 classe: p.classe, vezes: 1, primeira: p.disp, ultima: p.disp,
+                                 pub: p });
+      continue;
+    }
+    at.vezes++;
+    if (p.disp && (!at.primeira || p.disp < at.primeira)) at.primeira = p.disp;
+    if (p.disp && (!at.ultima || p.disp > at.ultima)) at.ultima = p.disp;
+  }
+  return [...m.values()].sort((a, b) => b.vezes - a.vezes);
+}
+
+function renderForaDaBase(f) {
+  const el = document.getElementById('corpoFora');
+  if (!el) return;
+  const fora = processosForaDaBase(f);
+  document.getElementById('subFora').innerHTML = fora.length
+    ? '<b>' + num(fora.length) + '</b> processos com publicação no período e <b>sem cadastro na Base geral ' +
+      'do DataJud</b>. Enquanto ficarem fora, nenhum indicador por produto, cliente ou resultado os enxerga. ' +
+      'Use <b>Copiar números</b> e cole em <i>BM - DataJud/DJEN &rsaquo; Incluir processos por número</i> na planilha.'
+    : 'Todo processo publicado no período já está cadastrado na Base geral.';
+
+  el.innerHTML = fora.length ? fora.map(r =>
+    '<tr><td><b>' + esc(r.numero) + '</b></td>' +
+    '<td>' + esc(r.tribunal) + '</td>' +
+    '<td style="white-space:normal;max-width:230px">' + esc(r.orgao || '—') + '</td>' +
+    '<td style="white-space:normal;max-width:200px">' + esc(r.classe || '—') + '</td>' +
+    '<td>' + num(r.vezes) + '</td>' +
+    '<td>' + dtBR(r.primeira) + '</td><td>' + dtBR(r.ultima) + '</td></tr>'
+  ).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhum processo fora da base.</td></tr>';
+  if (fora.length) tabelaClicavel('corpoFora', fora.map(r => r.pub), fichaPub);
+
+  const btnC = document.getElementById('foraCopiar');
+  if (btnC && !btnC.dataset.pronto) {
+    btnC.dataset.pronto = '1';
+    btnC.addEventListener('click', () => {
+      const lista = processosForaDaBase(filtrar(BASE.pubs)).map(r => r.numero).join('\n');
+      if (!lista) return;
+      const txt = document.createElement('textarea');
+      txt.value = lista;
+      txt.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(txt);
+      txt.select();
+      try { document.execCommand('copy'); btnC.textContent = 'Copiados!'; }
+      catch (e) { btnC.textContent = 'Não deu — selecione na tabela'; }
+      document.body.removeChild(txt);
+      setTimeout(() => { btnC.textContent = 'Copiar números'; }, 2200);
+    });
+  }
+  const btnX = document.getElementById('foraCSV');
+  if (btnX && !btnX.dataset.pronto) {
+    btnX.dataset.pronto = '1';
+    btnX.addEventListener('click', () => {
+      const lista = processosForaDaBase(filtrar(BASE.pubs));
+      if (!lista.length) return;
+      const m = [['Numero do processo', 'Tribunal', 'Orgao julgador', 'Classe',
+                  'Publicacoes no periodo', 'Primeira publicacao', 'Ultima publicacao']]
+        .concat(lista.map(r => [r.numero, r.tribunal, r.orgao, r.classe, r.vezes,
+                                dtBR(r.primeira), dtBR(r.ultima)]));
+      const nome = 'djen-processos-fora-da-base-' + new Date().toISOString().slice(0, 10);
+      if (typeof XLSX !== 'undefined') {
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(m), 'Fora da base');
+        XLSX.writeFile(wb, nome + '.xlsx');
+        return;
+      }
+      const csv = m.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = nome + '.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    });
+  }
+}
+
 function renderTendencia(f) {
   const porDia = {};
   for (const p of f) if (p.disp) porDia[p.disp.getTime()] = (porDia[p.disp.getTime()] || 0) + 1;
@@ -3698,6 +3806,7 @@ function desenhar() {
   } else if (FILTRO.aba === 'carteira') {
     renderCarteira(BASE);
     renderDivergencia(f);
+    renderForaDaBase(f);
     renderTendencia(f);
     renderMapaCalor(f);
     renderSemaforo(f);
