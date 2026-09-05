@@ -36,6 +36,7 @@
 <title>Publicações DJEN | Borges Macedo</title>
 <link rel="icon" type="image/png" href="favicon.png" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   * { -webkit-tap-highlight-color: transparent; }
@@ -513,6 +514,12 @@
   .cel-calor { cursor: pointer; transition: outline .12s; }
   .cel-calor:hover { outline: 2px solid var(--azul-claro); outline-offset: -2px; }
 
+  .valor-forte {
+    font-size: 1.02rem; font-weight: 800; color: var(--verde);
+    letter-spacing: -.01em; white-space: nowrap;
+  }
+  #execEstagio .chip, #execJulg .chip { font-size: .76rem; }
+
   .rodape-djen {
     margin-top: 2rem; padding: 1rem 1.2rem; border-top: 1px solid var(--borda);
     font-size: .76rem; color: var(--texto-muted); line-height: 1.6; text-align: center;
@@ -589,11 +596,11 @@
     <div class="filtro-linha">
       <span class="filtro-rotulo">Período</span>
       <div class="filtros" id="filtrosPeriodo">
-        <button type="button" class="chip" data-preset="hoje">Hoje</button>
-        <button type="button" class="chip" data-preset="7d">7 dias</button>
-        <button type="button" class="chip ativo" data-preset="30d">30 dias</button>
+        <button type="button" class="chip" data-preset="30d">30 dias</button>
         <button type="button" class="chip" data-preset="90d">90 dias</button>
+        <button type="button" class="chip ativo" data-preset="180d">6 meses</button>
         <button type="button" class="chip" data-preset="365d">12 meses</button>
+        <button type="button" class="chip" data-preset="730d">24 meses</button>
         <div class="sep"></div>
         <label class="filtro-mes">De
           <input type="date" class="campo-texto" id="dtIni">
@@ -606,8 +613,18 @@
     </div>
 
     <div class="filtro-linha">
-      <span class="filtro-rotulo">Inscrição</span>
-      <div class="filtros" id="filtrosOab"></div>
+      <span class="filtro-rotulo">Julgamento</span>
+      <div class="filtros" id="filtrosJulgamento"></div>
+    </div>
+
+    <div class="filtro-linha">
+      <span class="filtro-rotulo">Resultado</span>
+      <div class="filtros" id="filtrosDispositivo"></div>
+    </div>
+
+    <div class="filtro-linha">
+      <span class="filtro-rotulo">Produto</span>
+      <div class="filtros" id="filtrosProduto"></div>
     </div>
 
     <div class="filtro-linha">
@@ -615,112 +632,287 @@
       <div class="filtros" id="filtrosTribunal"></div>
     </div>
 
-    <div class="filtro-linha">
+    <div class="filtro-linha oculto" id="linhaTipo">
       <span class="filtro-rotulo">Tipo de ato</span>
       <div class="filtros" id="filtrosTipo"></div>
+    </div>
+
+    <div class="filtro-linha oculto" id="linhaOab">
+      <span class="filtro-rotulo">Inscrição</span>
+      <div class="filtros" id="filtrosOab"></div>
     </div>
 
     <div class="filtro-linha">
       <span class="filtro-rotulo">Busca</span>
       <div class="filtros">
-        <div class="busca-wrap"><span class="busca-icone">&#128269;</span><input type="search" class="busca" id="buscaCampo" placeholder="Processo, cliente, tribunal, texto..." autocomplete="off" /><button type="button" class="busca-limpar oculto" id="buscaCampoLimpar" title="Limpar">&#10005;</button></div>
+        <div class="busca-wrap"><span class="busca-icone">&#128269;</span><input type="search" class="busca" id="buscaCampo" placeholder="Processo, cliente, tribunal, texto da decisão..." autocomplete="off" /><button type="button" class="busca-limpar oculto" id="buscaCampoLimpar" title="Limpar">&#10005;</button></div>
+        <button type="button" class="chip" id="btnMaisFiltros">Mais filtros</button>
         <button type="button" class="chip" id="btnLimparTudo">Limpar filtros</button>
-        <button type="button" class="chip" id="btnCSV">Exportar CSV</button>
       </div>
     </div>
   </section>
 
   <div class="abas" id="abas">
-    <button type="button" class="aba ativa" data-aba="operacao">Operação diária</button>
-    <button type="button" class="aba" data-aba="analise">Análise</button>
+    <button type="button" class="aba ativa" data-aba="resultados">Resultados</button>
+    <button type="button" class="aba" data-aba="execucao">Valores a executar</button>
+    <button type="button" class="aba" data-aba="carteira">Carteira e movimento</button>
+    <button type="button" class="aba" data-aba="relatorio">Relatórios</button>
     <button type="button" class="aba" data-aba="ceo">Visão CEO</button>
   </div>
 
-  <!-- ================================================== OPERAÇÃO -->
-  <div class="painel" id="painel-operacao">
+  <!-- ================================================== RESULTADOS -->
+  <div class="painel" id="painel-resultados">
     <section class="secao">
-      <div class="secao-titulo">Saúde da coleta <span class="marca-tempo">tempo real</span></div>
-      <div class="secao-sub">Se esta faixa não estiver verde, nenhum número abaixo é confiável — ausência de publicação pode ser calmaria ou coletor quebrado, e as duas se parecem.</div>
-      <div class="resumo-grid" id="saudeColeta"></div>
+      <div class="secao-titulo">O que foi decidido no período</div>
+      <div class="secao-sub">Cada número sai do dispositivo escrito na publicação. Quando o dispositivo não aparece — despacho, intimação, ato ordinatório —, a publicação fica fora da conta em vez de entrar como derrota.</div>
+      <div class="kpis" id="kpisResultado"></div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Sentenças</div>
+      <div class="secao-sub">Procedência, improcedência, extinção e acordo homologado — a mesma divisão que a planilha usa, para os dois painéis fecharem.</div>
+      <div class="resumo-grid" id="resumoSentenca"></div>
+      <div class="card" style="margin-top:1rem">
+        <div class="secao-sub" style="margin:0 0 .6rem 0">Volume de sentenças por mês, por resultado</div>
+        <div class="grafico-box alto"><canvas id="grafSentencaMes"></canvas></div>
+      </div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Acórdãos</div>
+      <div class="secao-sub">Resultado do julgamento colegiado, separado por espécie de recurso. Apelação e agravo têm taxa própria — misturá-las esconde onde a tese passa e onde ela para.</div>
+      <div class="resumo-grid" id="resumoAcordao"></div>
       <div class="card" style="margin-top:1rem">
         <div class="tabela-wrap">
-          <table id="tabelaColeta">
-            <thead><tr><th>Inscrição</th><th>HTTP</th><th>Publicações na janela</th><th>Novas</th><th>Páginas</th><th>Tempo</th><th>Leitura</th></tr></thead>
-            <tbody id="corpoColeta"></tbody>
+          <table id="tabelaRecurso">
+            <thead><tr>
+              <th>Espécie de recurso</th><th>Julgados</th><th>Provido</th>
+              <th>Parcial</th><th>Não provido</th><th>Êxito</th>
+            </tr></thead>
+            <tbody id="corpoRecurso"></tbody>
           </table>
         </div>
+        <div class="secao-sub" style="margin:.6rem 0 0 0">Clique numa linha para abrir os acórdãos daquela espécie.</div>
       </div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Cartões do dia <span class="marca-tempo">tempo real</span></div>
-      <div class="kpis" id="kpisOperacao"></div>
+      <div class="secao-titulo">Liminares</div>
+      <div class="secao-sub">Deferimento e indeferimento de tutela. É o indicador mais rápido para saber se a tese entra bem numa vara nova.</div>
+      <div class="resumo-grid" id="resumoLiminar"></div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Semáforo de prazos <span class="marca-tempo">tempo real</span></div>
-      <div class="secao-sub">Prazo sugerido pela leitura do texto, com a confiança à vista. <b>Nada entra em agenda sem validação humana</b> — o painel indica, não lança.</div>
-      <div class="semaforo" id="semaforo"></div>
+      <div class="secao-titulo">Julgamento × resultado</div>
+      <div class="secao-sub">A matriz inteira. Clique numa célula para abrir as decisões que estão por trás dela e validar uma a uma.</div>
+      <div class="card"><div class="tabela-wrap"><div id="matrizJulg"></div></div></div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Fila de triagem</div>
-      <div class="secao-sub" id="subFila">—</div>
+      <div class="secao-titulo">Desempenho por produto jurídico</div>
+      <div class="secao-sub" id="subProduto">—</div>
       <div class="card">
         <div class="tabela-wrap">
-          <table id="tabelaFila">
+          <table id="tabelaProduto">
             <thead><tr>
-              <th>Urgência</th><th>Disponibilização</th><th>Tribunal</th><th>Processo</th>
-              <th>Cliente</th><th>Tipo de ato</th><th>Resumo</th><th>Prazo</th>
-              <th>Confiança</th><th>Resultado</th>
+              <th>Produto</th><th>Decisões</th><th>Favorável</th><th>Parcial</th>
+              <th>Desfavorável</th><th>Êxito</th><th>Condenação identificada</th>
             </tr></thead>
-            <tbody id="corpoFila"></tbody>
+            <tbody id="corpoProduto"></tbody>
           </table>
         </div>
-        <div class="secao-sub" id="notaFila" style="margin:.6rem 0 0 0"></div>
+      </div>
+      <div class="grid-2" style="margin-top:1rem">
+        <div class="card">
+          <div class="secao-sub" style="margin:0 0 .6rem 0">Êxito por produto</div>
+          <div class="grafico-box medio"><canvas id="grafProduto"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="secao-sub" style="margin:0 0 .6rem 0">Êxito por tribunal</div>
+          <div class="grafico-box medio"><canvas id="grafResTribunal"></canvas></div>
+        </div>
       </div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Alertas ativos</div>
-      <div id="alertas"></div>
+      <div class="secao-titulo">Desempenho contra cada contraparte</div>
+      <div class="secao-sub" id="subReus">—</div>
+      <div class="card">
+        <div class="tabela-wrap">
+          <table id="tabelaReus">
+            <thead><tr>
+              <th>Contraparte</th><th>Decisões</th><th>Favorável</th><th>Parcial</th>
+              <th>Desfavorável</th><th>Êxito</th><th>Condenação identificada</th>
+            </tr></thead>
+            <tbody id="corpoReus"></tbody>
+          </table>
+        </div>
+        <div class="secao-sub" style="margin:.6rem 0 0 0">Clique numa linha para abrir as decisões contra aquela contraparte.</div>
+      </div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Decisões do período</div>
+      <div class="secao-sub" id="subDecisoes">—</div>
+      <div class="filtro-linha" id="filtroDec">
+        <span class="filtro-rotulo">Filtrar</span>
+        <div class="filtros">
+          <div class="busca-wrap"><span class="busca-icone">&#128269;</span><input type="search" class="busca" id="decBusca" placeholder="Processo, cliente, réu, produto, texto..." autocomplete="off" /></div>
+          <button type="button" class="chip" id="decComValor">Só com condenação</button>
+          <button type="button" class="chip" id="decDiverg">Só divergentes do registro</button>
+          <button type="button" class="chip" id="decLimpar">Limpar</button>
+          <div class="sep"></div>
+          <button type="button" class="chip" id="decCSV">Exportar CSV</button>
+          <button type="button" class="chip" id="decXLSX">Exportar XLSX</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="tabela-wrap">
+          <table id="tabelaDecisoes">
+            <thead><tr>
+              <th>Data</th><th>Processo</th><th>Cliente</th><th>Produto</th>
+              <th>Julgamento</th><th>Resultado</th><th>Condenação</th>
+              <th>Registro na planilha</th><th>Confiança</th>
+            </tr></thead>
+            <tbody id="corpoDecisoes"></tbody>
+          </table>
+        </div>
+        <div class="secao-sub" id="notaDecisoes" style="margin:.6rem 0 0 0"></div>
+      </div>
     </section>
   </div>
 
-  <!-- ================================================== ANÁLISE -->
-  <div class="painel oculto" id="painel-analise">
+  <!-- ================================================== EXECUÇÃO -->
+  <div class="painel oculto" id="painel-execucao">
     <section class="secao">
-      <div class="secao-titulo">Termômetro de resultados</div>
-      <div class="secao-sub">O que as decisões publicadas produziram no período. A leitura vem do dispositivo escrito no texto — quando ele não aparece, a publicação fica em "não aplicável" em vez de entrar num lado.</div>
-      <div class="resumo-grid" id="resumoResultado"></div>
-      <div class="grid-2" style="margin-top:1rem">
+      <div class="secao-titulo">Quanto há para executar</div>
+      <div class="secao-sub">Valor lido no dispositivo das decisões favoráveis e parciais. É estimativa de leitura, não apuração contábil — cada linha traz o trecho de onde o número saiu, para validação.</div>
+      <div class="kpis" id="kpisExecucao"></div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Ganhou, mas já recebeu?</div>
+      <div class="secao-sub">Condenação identificada por estágio de recebimento, lido da coluna Situação do Alvará da planilha do DataJud. "A solicitar" é ganho parado: depende só de providência interna.</div>
+      <div class="resumo-grid" id="resumoEstagio"></div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Fila de validação</div>
+      <div class="filtro-linha" id="filtroExec">
+        <span class="filtro-rotulo">Filtrar</span>
+        <div class="filtros">
+          <div class="busca-wrap"><span class="busca-icone">&#128269;</span><input type="search" class="busca" id="execBusca" placeholder="Processo, cliente, réu, produto..." autocomplete="off" /></div>
+          <label class="filtro-mes">Valor mínimo
+            <select class="campo-texto" id="execMinimo">
+              <option value="0">qualquer</option>
+              <option value="1000">R$ 1 mil</option>
+              <option value="5000">R$ 5 mil</option>
+              <option value="10000">R$ 10 mil</option>
+              <option value="50000">R$ 50 mil</option>
+              <option value="100000">R$ 100 mil</option>
+            </select>
+          </label>
+          <button type="button" class="chip" id="execTransito">Só com trânsito</button>
+          <button type="button" class="chip" id="execLimpar">Limpar</button>
+          <div class="sep"></div>
+          <button type="button" class="chip" id="execCSV">Exportar CSV</button>
+          <button type="button" class="chip" id="execXLSX">Exportar XLSX</button>
+        </div>
+      </div>
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Julgamento</span>
+        <div class="filtros" id="execJulg"></div>
+      </div>
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Recebimento</span>
+        <div class="filtros" id="execEstagio"></div>
+      </div>
+      <div class="secao-sub">Decisões com valor identificado, da maior para a menor. Confira o trecho, abra a certidão e marque na planilha — é daqui que sai a ordem de execução.</div>
+      <div class="card">
+        <div class="tabela-wrap">
+          <table id="tabelaExecucao">
+            <thead><tr>
+              <th>Data</th><th>Processo</th><th>Cliente</th><th>Produto</th>
+              <th>Resultado</th><th>Condenação</th><th>Trânsito</th>
+              <th>Recebimento</th><th>Trecho de onde saiu o valor</th>
+            </tr></thead>
+            <tbody id="corpoExecucao"></tbody>
+          </table>
+        </div>
+        <div class="secao-sub" id="notaExecucao" style="margin:.6rem 0 0 0"></div>
+      </div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Composição dos valores citados</div>
+      <div class="secao-sub">Nem todo real numa decisão é condenação. Separar por natureza evita somar custas e valor da causa dentro do que se vai executar.</div>
+      <div class="grid-2">
         <div class="card">
-          <div class="secao-sub" style="margin:0 0 .6rem 0">Resultado por tribunal</div>
-          <div class="grafico-box medio"><canvas id="grafResTribunal"></canvas></div>
+          <div class="secao-sub" style="margin:0 0 .6rem 0">Soma por natureza do valor</div>
+          <div class="grafico-box medio"><canvas id="grafNatureza"></canvas></div>
         </div>
         <div class="card">
-          <div class="secao-sub" style="margin:0 0 .6rem 0">Tipos de ato no período</div>
-          <div class="grafico-box medio"><canvas id="grafAto"></canvas></div>
+          <div class="secao-sub" style="margin:0 0 .6rem 0">Condenação identificada por produto</div>
+          <div class="grafico-box medio"><canvas id="grafCondProduto"></canvas></div>
         </div>
       </div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Mapa de calor — tribunal × tipo de ato</div>
-      <div class="secao-sub">Onde está o volume e onde está o risco. Clique numa célula para abrir as publicações daquele cruzamento.</div>
-      <div class="card"><div class="tabela-wrap"><div id="mapaCalor"></div></div></div>
+      <div class="secao-titulo">Situação do alvará na carteira</div>
+      <div class="secao-sub">Vem da planilha do DataJud, não do diário. Mostra quanto do que já foi ganho ainda não virou dinheiro.</div>
+      <div class="resumo-grid" id="resumoAlvara"></div>
+    </section>
+  </div>
+
+  <!-- ================================================== CARTEIRA -->
+  <div class="painel oculto" id="painel-carteira">
+    <section class="secao">
+      <div class="secao-titulo">Carteira consolidada</div>
+      <div class="secao-sub">Aqui não vale o recorte de período: é o retrato da base inteira do DataJud, com o resultado que o escritório registrou em cada processo.</div>
+      <div class="resumo-grid" id="resumoCarteira"></div>
+      <div class="grid-2" style="margin-top:1rem">
+        <div class="card">
+          <div class="secao-sub" style="margin:0 0 .6rem 0">Resultado da sentença — carteira inteira</div>
+          <div class="grafico-box medio"><canvas id="grafCarteiraSent"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="secao-sub" style="margin:0 0 .6rem 0">Resultado do recurso — carteira inteira</div>
+          <div class="grafico-box medio"><canvas id="grafCarteiraRec"></canvas></div>
+        </div>
+      </div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Tendência</div>
-      <div class="secao-sub">Volume por dia com média móvel de 7 dias. Queda abrupta costuma ser falha de coleta, não calmaria.</div>
+      <div class="secao-titulo">Divergência entre o diário e o registro</div>
+      <div class="secao-sub" id="subDivergencia">—</div>
+      <div class="card">
+        <div class="tabela-wrap">
+          <table id="tabelaDivergencia">
+            <thead><tr>
+              <th>Data</th><th>Processo</th><th>Cliente</th><th>O diário publicou</th>
+              <th>A planilha registra</th><th>Confiança</th>
+            </tr></thead>
+            <tbody id="corpoDivergencia"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Volume publicado</div>
+      <div class="secao-sub">Onde está o movimento. Queda abrupta costuma ser falha de coleta, não calmaria.</div>
       <div class="card"><div class="grafico-box alto"><canvas id="grafTendencia"></canvas></div></div>
+      <div class="card" style="margin-top:1rem">
+        <div class="secao-sub" style="margin:0 0 .6rem 0">Tribunal × tipo de ato — clique para abrir o recorte</div>
+        <div class="tabela-wrap"><div id="mapaCalor"></div></div>
+      </div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Cobertura por inscrição</div>
-      <div class="secao-sub">Se uma inscrição some por semanas, ou é carteira parada ou é a chave de consulta que quebrou — as duas exigem ação e nenhuma aparece sozinha.</div>
-      <div class="card"><div class="grafico-box medio"><canvas id="grafOab"></canvas></div></div>
+      <div class="secao-titulo">Prazos em curso sinalizados nas publicações</div>
+      <div class="secao-sub">Sinalização de apoio. <b>O controle oficial de prazos é o AdvBox</b> — aqui só aparecem prazos ainda em curso, para leitura de carga, nunca como agenda.</div>
+      <div class="semaforo" id="semaforo"></div>
     </section>
 
     <section class="secao">
@@ -735,54 +927,102 @@
         </div>
       </div>
     </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Saúde da coleta</div>
+      <div class="secao-sub">Se esta faixa não estiver verde, nenhum número acima é confiável — ausência de publicação pode ser calmaria ou coletor quebrado, e as duas se parecem.</div>
+      <div class="resumo-grid" id="saudeColeta"></div>
+      <div class="card" style="margin-top:1rem">
+        <div class="tabela-wrap">
+          <table id="tabelaColeta">
+            <thead><tr><th>Inscrição</th><th>HTTP</th><th>Publicações na janela</th><th>Novas</th><th>Páginas</th><th>Tempo</th><th>Leitura</th></tr></thead>
+            <tbody id="corpoColeta"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================================================== RELATÓRIOS -->
+  <div class="painel oculto" id="painel-relatorio">
+    <section class="secao">
+      <div class="secao-titulo">Extrair base</div>
+      <div class="secao-sub">Os filtros do topo valem aqui. Escolha a unidade, marque as colunas e exporte — o arquivo sai exatamente com o recorte que está na tela.</div>
+
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Unidade</span>
+        <div class="filtros" id="unidadeRel">
+          <button type="button" class="chip ativo" data-un="publicacoes">Uma linha por publicação</button>
+          <button type="button" class="chip" data-un="decisoes">Só decisões com dispositivo</button>
+          <button type="button" class="chip" data-un="processos">Uma linha por processo</button>
+          <button type="button" class="chip" data-un="valores">Uma linha por valor citado</button>
+        </div>
+      </div>
+
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Colunas</span>
+        <div class="filtros" id="colunasRel"></div>
+      </div>
+
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Exportar</span>
+        <div class="filtros">
+          <button type="button" class="chip" id="btnRelTodas">Marcar todas</button>
+          <button type="button" class="chip" id="btnRelPadrao">Voltar ao padrão</button>
+          <div class="sep"></div>
+          <button type="button" class="chip" id="btnRelCSV">Baixar CSV</button>
+          <button type="button" class="chip" id="btnRelXLSX">Baixar XLSX</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="secao">
+      <div class="secao-titulo">Prévia</div>
+      <div class="secao-sub" id="subRel">—</div>
+      <div class="card">
+        <div class="tabela-wrap">
+          <table id="tabelaRel">
+            <thead><tr id="cabRel"></tr></thead>
+            <tbody id="corpoRel"></tbody>
+          </table>
+        </div>
+        <div class="secao-sub" id="notaRel" style="margin:.6rem 0 0 0"></div>
+      </div>
+    </section>
   </div>
 
   <!-- ================================================== CEO -->
   <div class="painel oculto" id="painel-ceo">
     <section class="secao">
       <div class="secao-titulo">Cockpit</div>
-      <div class="secao-sub">Os números que abrem o dia. Cada um com o que a base sustenta hoje — o que depender de fonte não conectada aparece marcado, não estimado.</div>
+      <div class="secao-sub">Os números que abrem a conversa de estratégia. Cada um com a lista que o sustenta a um clique.</div>
       <div class="kpis" id="kpisCeo"></div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Dinheiro identificado nas publicações</div>
-      <div class="secao-sub">Alvará, honorários, custas, depósito judicial e RPV citados no texto. É receita que passou pelo diário e pode não ter sido acompanhada.</div>
-      <div class="resumo-grid" id="resumoDinheiro"></div>
-      <div class="card" style="margin-top:1rem">
-        <div class="tabela-wrap">
-          <table id="tabelaDinheiro">
-            <thead><tr><th>Disponibilização</th><th>Processo</th><th>Cliente</th><th>Tribunal</th><th>Tipo</th><th>Valor citado</th><th>Trecho</th></tr></thead>
-            <tbody id="corpoDinheiro"></tbody>
-          </table>
-        </div>
-        <div class="secao-sub" id="notaDinheiro" style="margin:.6rem 0 0 0"></div>
-      </div>
+      <div class="secao-titulo">Onde a tese ganha e onde ela para</div>
+      <div class="secao-sub">Produto × julgamento. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência. Não são a mesma decisão, e a providência de cada uma é outra.</div>
+      <div class="card"><div class="tabela-wrap"><div id="matrizProdutoFase"></div></div></div>
     </section>
 
     <section class="secao">
-      <div class="secao-titulo">Painel de risco</div>
-      <div class="secao-sub">Tudo que exige decisão, com o limiar ao lado do número. Cada linha diz o que fazer.</div>
-      <div class="card">
-        <div class="tabela-wrap">
-          <table id="tabelaRisco">
-            <thead><tr><th>Indicador</th><th>Agora</th><th>Limiar</th><th>Situação</th><th>Ação</th></tr></thead>
-            <tbody id="corpoRisco"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="secao-titulo">Leitura do período</div>
+      <div class="secao-sub">O que os números acima dizem, em texto, com o limiar ao lado.</div>
+      <div id="leituraCeo"></div>
     </section>
 
     <section class="secao">
       <div class="secao-titulo">Fontes não conectadas</div>
-      <div class="secao-sub">O que falta para o cockpit financeiro completo. Cada bloco diz qual planilha o alimenta — número sem procedência é pior que número nenhum.</div>
+      <div class="secao-sub">O que falta para a visão financeira fechar. Cada bloco diz qual planilha o alimenta — número sem procedência é pior que número nenhum.</div>
       <div id="fontesFaltantes"></div>
     </section>
   </div>
 
   <div class="rodape-djen">
-    Ferramenta de apoio. <b>Não substitui a consulta oficial ao diário.</b>
-    Dados lidos ao vivo da API pública do DJEN (comunicaapi.pje.jus.br).
+    Ferramenta de <b>análise estratégica</b>. Não é sistema de controle de prazos —
+    esse controle é do <b>AdvBox</b>. Não substitui a consulta oficial ao diário.
+    Dados lidos ao vivo da API pública do DJEN (comunicaapi.pje.jus.br), cruzados com a
+    base do DataJud.
   </div>
 
 </main>
@@ -1229,12 +1469,15 @@ const HOJE = (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
 /* Estado dos filtros. Os blocos operacionais ignoram o período de propósito:
    fila e prazo são sempre "agora", não "no recorte". */
 const FILTRO = {
-  preset: '30d', ini: null, fim: null,
+  preset: '180d', ini: null, fim: null,
   oabs: new Set(OABS.map(o => o.chave)),
   tribunais: new Set(),
   tipos: new Set(),
+  julgamentos: new Set(),
+  dispositivos: new Set(),
+  produtos: new Set(),
   busca: '',
-  aba: 'operacao'
+  aba: 'resultados'
 };
 
 let BASE = null;           // { pubs, processos, coleta }
@@ -1361,6 +1604,151 @@ function nrmDoc(s) {
     .normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 }
 
+/* --------------------------------------------------- produto jurídico
+   O produto está CADASTRADO na planilha Clientes e Processos e é lido de lá
+   (ver lerClientes). Estas regras são só a retaguarda para o processo que
+   ainda não tem cadastro: deduzem pelo assunto do CNJ e devolvem exatamente
+   os mesmos nomes do cadastro — senão o ranking por produto sairia partido
+   entre duas grafias da mesma tese. A ficha marca o que veio por dedução. */
+const REGRAS_PRODUTO = [
+  ['Fornecimento de CBD (Abins)',      /sem registro na anvisa|anvisa|canabidiol|cbd/],
+  ['Rev. Plano de Saúde',              /reajuste contratual|plano de saude|planos de saude|seguro saude|seguro de saude/],
+  ['Neg. Procedimento Médico (TEA)',   /transtorno do espectro|autis|\btea\b|aba\b|terapia multidisciplinar/],
+  ['Neg. Procedimento Médico (Geral)', /tratamento medico|fornecimento de medicament|home care|internacao|procedimento cirurgico|erro medico|orteses|proteses/],
+  ['Superendividamento',               /superendivid/],
+  ['Rev. Financiamento Imobiliário',   /financiamento imobiliario|sistema financeiro de habitacao|\bsfh\b|alienacao fiduciaria de imovel/],
+  ['Rev. Financiamento Veicular',      /financiamento de veiculo|arrendamento mercantil|leasing|busca e apreensao/],
+  ['Rev. Contrato Bancário PF',        /contratos bancarios|interpretacao \/ revisao de contrato|revisao de contrato|clausulas abusivas|revisao do saldo|juros remunerat|anatocismo|emprestimo consignado|cedula de credito|financiamento/],
+  ['RMC/RCC',                          /reserva de margem consignavel|\brmc\b|\brcc\b|cartao consignado/],
+  ['Restituição do ITIV',              /itbi|itiv|imposto de transmissao/],
+  ['Isenção do IR por Doenças Graves', /imposto de renda|irpf|isencao.{0,25}doenca/],
+  ['Aéreo (Cancelamento de voo, overbooking, extravio de bagagem etc)',
+                                       /transporte aereo|cancelamento de voo|overbooking|extravio de bagagem|atraso de voo/],
+  ['Reclamação Trabalhista',           /reclamacao trabalhista|verbas rescisorias|vinculo empregaticio/],
+  ['Negativação Indevida',             /inclusao indevida|cadastro de inadimplentes|protesto indevido|negativacao/],
+  ['Outros Assuntos',                  /praticas abusivas|dano moral|dano material|obrigacao de fazer|repeticao do indebito|acidente de transito|condominio|telefonia|energia eletrica/]
+];
+function produtoDe(assunto, classe) {
+  const a = (nrmDoc(assunto) + ' ' + nrmDoc(classe)).trim();
+  if (!a) return 'Não identificado';
+  for (const [nome, re] of REGRAS_PRODUTO) if (re.test(a)) return nome;
+  return 'Outros Assuntos';
+}
+
+/* ------------------------------------------------------ tipo de recurso
+   O pedido é ver acórdão separado por apelação, agravo e demais recursos.
+   A classe processual nomeia isso melhor que o texto, então ela vem antes. */
+const REGRAS_RECURSO = [
+  ['Embargos de declaração',        /embargos de declara/],
+  ['Agravo interno',                /agravo interno|agravo regimental/],
+  ['Agravo de instrumento',         /agravo de instrumento/],
+  ['Recurso especial/extraordinário', /recurso especial|recurso extraordinario|agravo em recurso especial/],
+  ['Apelação',                      /apelacao/],
+  ['Recurso inominado',             /recurso inominado/],
+  ['Embargos infringentes',         /embargos infringentes/],
+  ['Agravo',                        /\bagravo\b/]
+];
+function tipoRecursoDe(classe, texto) {
+  const c = nrmDoc(classe);
+  for (const [nome, re] of REGRAS_RECURSO) if (re.test(c)) return nome;
+  const t = nrmDoc(String(texto || '').slice(0, 700));
+  for (const [nome, re] of REGRAS_RECURSO) if (re.test(t)) return nome;
+  return null;
+}
+
+/* -------------------------------------------------------- dispositivo
+   O rollup favorável/desfavorável responde "ganhou ou perdeu"; para decidir
+   estratégia é preciso saber *o quê* — improcedência e extinção sem mérito
+   pesam diferente, e acordo homologado não é derrota nem vitória plena. */
+const REGRAS_DISPOSITIVO = [
+  /* Ancoradas no verbo do dispositivo. "improcedência" solta aparece em citação
+     de jurisprudência e em alegação afastada — contar isso como derrota
+     inverte o índice. "procedente em parte" é a forma mais comum do parcial. */
+  ['Parcialmente procedente',     /parcialmente\s+proced|proced[êe]ncia\s+parcial|proceden\w*\s+em\s+parte|em\s+parte\s+proceden|julgo\s+proceden\w*\s+em\s+parte/i, 'Parcial'],
+  ['Improcedente',                /julg\w+\s+(?:totalmente\s+)?improcedente|improcedentes?\s+os?\s+pedidos?|improced[êe]ncia\s+d[oa]s?\s+pedid|pedidos?\s+.{0,20}improcedentes?/i, 'Desfavorável'],
+  ['Procedente',                  /julg\w+\s+(?:totalmente\s+)?procedente|procedentes?\s+os?\s+pedidos?|proced[êe]ncia\s+d[oa]s?\s+pedid|pedidos?\s+.{0,20}\bprocedentes?\b/i, 'Favorável'],
+  ['Acordo homologado',           /homolog\w*\s+(?:o\s+|a\s+)?(?:acordo|transa[çc][ãa]o)|acordo\s+[^.]{0,30}homolog/i,  'Favorável'],
+  ['Extinção do processo',        /extin[çc]\w+\s+d[oa]\s+(?:processo|feito)|julgo\s+extint|extingo\s+o\s+(?:processo|feito)|art\.?\s*485/i, 'Neutro'],
+  ['Recurso parcialmente provido',/parcial\s+provimento|provimento\s+parcial|provejo\s+parcialmente/i,                  'Parcial'],
+  ['Recurso não provido',         /nego\s+provimento|negar\s+provimento|improvido|desprovi|nego\s+seguimento|mantida\s+a\s+senten/i, 'Desfavorável'],
+  ['Recurso provido',             /dou\s+provimento|dar\s+provimento|d[êe]-se\s+provimento|provimento\s+ao\s+recurso|reformo\s+a\s+senten/i, 'Favorável'],
+  /* "pedido" sozinho não serve: "defiro o pedido de dilação de prazo" e
+     "defiro o pedido de gratuidade" não são liminar, e estavam entrando como
+     resultado favorável. Exige-se a palavra que caracteriza a tutela. */
+  ['Liminar deferida',            /(?:defiro|concedo)\s+(?:parcialmente\s+)?(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Favorável'],
+  ['Liminar indeferida',          /(?:indefiro|denego)\s+(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Desfavorável']
+];
+
+/* A ordem de teste muda conforme o julgamento: num acórdão que diz "mantida a
+   sentença de improcedência", o que se decidiu foi o recurso, não o mérito
+   original — testar as regras de recurso primeiro evita rotular errado. */
+const ORDEM_DISP = {
+  'Recurso':  ['Recurso parcialmente provido', 'Recurso não provido', 'Recurso provido',
+               'Parcialmente procedente', 'Improcedente', 'Procedente',
+               'Acordo homologado', 'Extinção do processo', 'Liminar deferida', 'Liminar indeferida'],
+  'Liminar':  ['Liminar deferida', 'Liminar indeferida', 'Parcialmente procedente', 'Improcedente',
+               'Procedente', 'Extinção do processo', 'Acordo homologado',
+               'Recurso parcialmente provido', 'Recurso não provido', 'Recurso provido'],
+  'padrao':   ['Parcialmente procedente', 'Improcedente', 'Procedente', 'Acordo homologado',
+               'Extinção do processo', 'Recurso parcialmente provido', 'Recurso não provido',
+               'Recurso provido', 'Liminar deferida', 'Liminar indeferida']
+};
+function dispositivoDe(t, julgamento) {
+  const ordem = ORDEM_DISP[julgamento] || ORDEM_DISP.padrao;
+  for (const nome of ordem) {
+    const r = REGRAS_DISPOSITIVO.find(x => x[0] === nome);
+    if (r && r[1].test(t)) return { dispositivo: r[0], resultado: r[2] };
+  }
+  return { dispositivo: 'Sem dispositivo', resultado: 'Não aplicável' };
+}
+
+/* ------------------------------------------------------------- valores
+   Uma decisão cita muitos reais: causa, custas, honorários, multa e a
+   condenação em si. Somar tudo daria um número sem sentido, então cada valor
+   é classificado pelo que estiver escrito imediatamente antes dele. */
+const REGRAS_VALOR = [
+  /* Bloqueio vem primeiro: SISBAJUD e penhora citam cifras altíssimas que não
+     são receita do escritório nem condenação a executar — são constrição na
+     conta da parte adversa, e um único bloqueio milionário distorce a carteira
+     inteira se for lido como condenação. */
+  ['Bloqueio/penhora', /sisbajud|bacenjud|renajud|penhora|bloqueio|bloquei|arresto|indisponibilidade/],
+  ['Honorários',     /honorarios/],
+  ['Custas',         /custas|despesas processuais|preparo|porte de remessa/],
+  ['Multa',          /multa|astreinte/],
+  ['Valor da causa', /valor da causa|valor atribuido a causa/],
+  ['Alvará/RPV',     /alvara|rpv|requisicao de pequeno valor|precatorio|levantamento/],
+  ['Depósito',       /deposito/],
+  ['Condenação',     /conden|indeniz|danos? mor|danos? mat|reparacao|ressarci|restitui|repeticao do indebito|a titulo de|pagamento d[ao]/]
+];
+function extrairValores(t) {
+  const out = [];
+  const re = /R\$\s*([\d.]{1,18},\d{2})/g;
+  let m;
+  while ((m = re.exec(t)) !== null && out.length < 40) {
+    const v = Number(m[1].replace(/\./g, '').replace(',', '.'));
+    if (!isFinite(v) || v <= 0) continue;
+    const ctx = nrmDoc(t.slice(Math.max(0, m.index - 170), m.index));
+    let tipo = 'Não identificado';
+    for (const [nome, rx] of REGRAS_VALOR) if (rx.test(ctx)) { tipo = nome; break; }
+    out.push({ tipo, valor: v,
+               trecho: t.slice(Math.max(0, m.index - 120), m.index + 70).trim() });
+  }
+  return out;
+}
+/* Soma só os valores DISTINTOS de condenação: o mesmo número costuma aparecer
+   três ou quatro vezes na mesma decisão (dispositivo, correção, dispositivo
+   final), e somar repetição infla a carteira a executar. */
+function somaCondenacao(valores) {
+  const vistos = new Set();
+  let s = 0;
+  for (const v of valores) {
+    if (v.tipo !== 'Condenação' || vistos.has(v.valor)) continue;
+    vistos.add(v.valor);
+    s += v.valor;
+  }
+  return s;
+}
+
 function classificar(p) {
   const t = (p.texto || '') + ' ' + (p.tipoComunicacao || '') + ' ' + (p.tipoDocumento || '');
   let ato = 'Não classificado', conf = 30;
@@ -1387,23 +1775,19 @@ function classificar(p) {
     }
   }
 
-  /* Resultado: só se afirma quando o dispositivo aparece no texto. */
-  let resultado = 'Não aplicável', detalhe = '';
-  if (/julgo\s+procedente|defiro\s+a?\s*(?:tutela|liminar)|dou\s+provimento|concedo\s+a\s+seguran/i.test(t)) {
-    resultado = 'Favorável';
-    detalhe = /defiro/i.test(t) ? 'liminar deferida' : 'procedente';
-  } else if (/julgo\s+improcedente|indefiro\s+a?\s*(?:tutela|liminar)|nego\s+provimento|improvido/i.test(t)) {
-    resultado = 'Desfavorável';
-    detalhe = /indefiro/i.test(t) ? 'liminar indeferida' : 'improcedente';
-  } else if (/parcialmente\s+proced|provimento\s+parcial/i.test(t)) {
-    resultado = 'Parcial'; detalhe = 'parcialmente procedente';
-  } else if (/extin[çc][ãa]o|extingo/i.test(t)) {
-    resultado = 'Desfavorável'; detalhe = 'extinto sem mérito';
-  } else if (/homolog.*acordo|acordo.*homolog/i.test(t)) {
-    resultado = 'Favorável'; detalhe = 'acordo homologado';
-  } else if (/tr[âa]nsito\s+em\s+julgado/i.test(t)) {
-    resultado = 'Neutro'; detalhe = 'trânsito em julgado';
-  }
+  /* Julgamento: sentença, recurso ou liminar. Define a ordem em que as regras
+     de dispositivo são testadas e é o eixo pedido para a análise. */
+  const recurso = tipoRecursoDe(p.classe, p.texto);
+  const julgamento = ato === 'Sentença' ? 'Sentença'
+                   : ato === 'Acórdão' ? 'Recurso'
+                   : ato === 'Decisão interlocutória' ? 'Liminar'
+                   : (recurso ? 'Recurso' : 'Outros atos');
+
+  /* Dispositivo: só se afirma quando aparece escrito no texto. */
+  const d = dispositivoDe(t, julgamento);
+  let resultado = d.resultado, detalhe = d.dispositivo === 'Sem dispositivo' ? '' : d.dispositivo;
+  let dispositivo = d.dispositivo;
+  const transitou = /tr[âa]nsit\w+\s+em\s+julgado/i.test(t);
 
   let prazoDias = null, contagem = 'úteis';
   for (const [re, c] of REGRAS_PRAZO) {
@@ -1415,19 +1799,22 @@ function classificar(p) {
     (ato === 'Sentença' && resultado === 'Desfavorável');
   if (exigePrazo && prazoDias === null) { prazoDias = 15; conf = Math.min(conf, 55); }
 
-  /* Dinheiro: alvará, honorários, custas, multa. */
-  const temValor = /alvar[áa]|honor[áa]rios|custas|multa|dep[óo]sito\s+judicial|RPV|precat[óo]rio/i.test(t);
-  let valor = null;
-  const mv = /R\$\s*([\d.]+,\d{2})/.exec(t);
-  if (mv) valor = Number(mv[1].replace(/\./g, '').replace(',', '.'));
+  /* Dinheiro, separado por natureza. */
+  const valores = semTexto ? [] : extrairValores(p.texto || '');
+  const condenacao = somaCondenacao(valores);
+  const temValor = valores.length > 0 ||
+    /alvar[áa]|honor[áa]rios|custas|multa|dep[óo]sito\s+judicial|RPV|precat[óo]rio/i.test(t);
+  const valor = valores.length ? valores[0].valor : null;
 
   if (semTexto) {
     resultado = 'Não aplicável';
+    dispositivo = 'Sem dispositivo';
     detalhe = 'sigiloso — leitura obrigatória nos autos';
   }
-  return { ato, resultado, detalhe, prazoDias, contagem, exigePrazo,
+  return { ato, julgamento, recurso, dispositivo, resultado, detalhe, transitou,
+           prazoDias, contagem, exigePrazo,
            confianca: conf, temValor: semTexto ? false : temValor,
-           valor: semTexto ? null : valor, semTexto };
+           valor: semTexto ? null : valor, valores, condenacao, semTexto };
 }
 
 const URGENCIA = (fatal) => {
@@ -1446,7 +1833,8 @@ function janelaAtual() {
     return { ini: FILTRO.ini, fim: FILTRO.fim };
   const fim = new Date(HOJE);
   const ini = new Date(HOJE);
-  const dias = { hoje: 0, '7d': 7, '30d': 30, '90d': 90, '365d': 365, tudo: 1500 }[FILTRO.preset];
+  const dias = { hoje: 0, '7d': 7, '30d': 30, '90d': 90, '180d': 180,
+                 '365d': 365, '730d': 730, tudo: 1500 }[FILTRO.preset];
   ini.setDate(ini.getDate() - (dias === undefined ? 30 : dias));
   return { ini: iso(ini), fim: iso(fim) };
 }
@@ -1513,7 +1901,7 @@ async function coletar(ini, fim, aoProgredir) {
 
 function montarPub(it, oab) {
   const texto = limparHTML(it.texto);
-  const cls = classificar({ texto: texto,
+  const cls = classificar({ texto: texto, classe: String(it.nomeClasse || ''),
     tipoComunicacao: it.tipoComunicacao, tipoDocumento: it.tipoDocumento });
   const d = tresDatas(it.data_disponibilizacao, cls.prazoDias);
   const cancelada = String(it.status || '').toUpperCase() === 'C' ||
@@ -1538,6 +1926,8 @@ function montarPub(it, oab) {
     dispTxt: String(it.data_disponibilizacao || ''),
     disp: d.disp, pub: d.pub, inicioPrazo: d.inicio, fatal: d.fatal,
     ato: cls.ato, resultado: cls.resultado, detalhe: cls.detalhe,
+    julgamento: cls.julgamento, recurso: cls.recurso, dispositivo: cls.dispositivo,
+    transitou: cls.transitou, valores: cls.valores, condenacao: cls.condenacao,
     prazoDias: cls.prazoDias, contagem: cls.contagem, exigePrazo: cls.exigePrazo,
     confianca: cls.confianca, temValor: cls.temValor, valor: cls.valor,
     semTexto: cls.semTexto,
@@ -1546,6 +1936,56 @@ function montarPub(it, oab) {
 }
 
 /* ------------------------------------------- base de processos do escritório */
+/* A coluna Z vem como texto "R$ 15.000,00"; sem converter, qualquer soma de
+   valor da causa vira concatenação de string. */
+function moedaParaNumero(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return v;
+  const t = String(v).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  const n = Number(t);
+  return isFinite(n) ? n : null;
+}
+
+/* ------------------------------------------ base de clientes e processos
+   O produto jurídico é CADASTRADO nesta planilha, não deduzido: é a mesma
+   fonte que o painel Processos Judiciais usa. Daqui saem apenas o nome das
+   partes e o produto — as demais colunas não são lidas. */
+const SHEET_CLIENTES = '1XKMeYEapBqBq_IIaLu2uN-ceB3btArIYmrPBuyxsLHU';
+const ABA_CLIENTES = 'Todos os Processos';
+
+async function lerClientes() {
+  try {
+    const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + SHEET_CLIENTES +
+      '/values/' + encodeURIComponent("'" + ABA_CLIENTES + "'") +
+      '?valueRenderOption=FORMATTED_VALUE&key=' + CONFIG.GOOGLE_API_KEY;
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return new Map();
+    const grid = (await r.json()).values || [];
+    if (!grid.length) return new Map();
+
+    /* Resolução por cabeçalho, não por letra: a planilha é editada à mão e
+       a ordem das colunas já mudou antes. */
+    const norm = h => String(h == null ? '' : h).replace(/\s+/g, ' ').trim().toUpperCase();
+    const ci = {};
+    grid[0].forEach((h, i) => { const k = norm(h); if (k && ci[k] === undefined) ci[k] = i; });
+    const idx = r2 => { const i = ci[norm(r2)]; return i === undefined ? -1 : i; };
+    const iNum = idx('Nº DO PROCESSO'), iAut = idx('AUTOR'), iReu = idx('RÉU'),
+          iProd = idx('PRODUTO JURÍDICO'), iParte = idx('PARTE REPRESENTADA');
+    if (iNum < 0) return new Map();
+
+    const m = new Map();
+    for (const linha of grid.slice(1)) {
+      const g = i => (i >= 0 && linha[i] != null ? String(linha[i]).trim() : '');
+      const dig = g(iNum).replace(/\D/g, '');
+      if (!dig || m.has(dig)) continue;
+      m.set(dig, { autor: g(iAut), reu: g(iReu), produto: g(iProd), polo: g(iParte) });
+    }
+    return m;
+  } catch (e) {
+    return new Map();   // sem esta base o painel funciona, só deduz o produto
+  }
+}
+
 async function lerProcessos() {
   try {
     const r = await lerAbas(["'" + ABA_BASE + "'!A2:M4000", "'" + ABA_BASE + "'!P2:AH4000"]);
@@ -1565,7 +2005,14 @@ async function lerProcessos() {
         situacao: String((B[i] || [])[9] || ''),
         statusProcesso: String((B[i] || [])[17] || ''),
         dias: (B[i] || [])[4] === '' || (B[i] || [])[4] == null ? null : Number((B[i] || [])[4]),
-        ultPub: String((B[i] || [])[7] || '')
+        ultPub: String((B[i] || [])[7] || ''),
+        /* Registro próprio do escritório — vocabulário da planilha, não do DJEN. */
+        valorCausa: moedaParaNumero((B[i] || [])[10]),
+        resSentenca: String((B[i] || [])[13] || ''),
+        resRecurso: String((B[i] || [])[14] || ''),
+        alvara: String((B[i] || [])[16] || ''),
+        ajuizamento: parseDataBR(String((A[i] || [])[9] || '')),
+        produto: produtoDe(String((A[i] || [])[7] || ''), String((A[i] || [])[6] || ''))
       });
     }
     return m;
@@ -1577,10 +2024,11 @@ async function lerProcessos() {
 async function buscarTudo() {
   const { ini, fim } = janelaAtual();
   const chave = ini + '|' + fim + '|' + [...FILTRO.oabs].sort().join(',');
-  const [processos, colhido] = await Promise.all([
+  const [processos, colhido, clientes] = await Promise.all([
     lerProcessos(),
     CACHE_PUBS.has(chave) ? Promise.resolve(CACHE_PUBS.get(chave))
-                          : coletar(ini, fim, progressoColeta)
+                          : coletar(ini, fim, progressoColeta),
+    lerClientes()
   ]);
   CACHE_PUBS.set(chave, colhido);
 
@@ -1592,8 +2040,22 @@ async function buscarTudo() {
     p.cliente = proc ? proc.cliente : '';
     p.area = proc ? (proc.assunto || proc.classe) : '';
     p.faseProc = proc ? proc.fase : '';
+    /* Produto vem do processo; sem processo na base não há como deduzir. */
+    /* Produto cadastrado vence a dedução; a dedução só cobre o que a
+       planilha de clientes ainda não tem. */
+    const cli = clientes.get(p.processoDigitos);
+    p.autor = cli ? cli.autor : '';
+    p.reu = cli ? cli.reu : '';
+    p.polo = cli ? cli.polo : '';
+    p.produtoCadastrado = !!(cli && cli.produto);
+    p.produto = (cli && cli.produto) ? cli.produto
+              : (proc ? proc.produto : 'Não identificado');
+    p.resSentenca = proc ? proc.resSentenca : '';
+    p.resRecurso = proc ? proc.resRecurso : '';
+    p.alvara = proc ? proc.alvara : '';
+    p.valorCausa = proc ? proc.valorCausa : null;
   }
-  return { pubs: colhido.pubs, coleta: colhido.coleta, processos, janela: { ini, fim } };
+  return { pubs: colhido.pubs, coleta: colhido.coleta, processos, clientes, janela: { ini, fim } };
 }
 
 /* A coleta pode levar dezenas de segundos numa janela ampla — o DJEN devolve
@@ -1616,200 +2078,143 @@ function progressoColeta(rotulo, pg, total, acumulado) {
 
 /* =========================================================================
    PUBLICAÇÕES DJEN — RENDERIZAÇÃO
+   Painel de leitura estratégica de resultado. Não é agenda de prazos: o
+   controle de prazo é do AdvBox, e por isso nada aqui é apresentado como
+   tarefa vencida.
    ========================================================================= */
 const dtBR = d => d ? d.toLocaleDateString('pt-BR') : '—';
-const CLASSE_URG = { 'crítica': 'vermelho', 'alta': 'amarelo', 'média': 'neutro', 'baixa': 'neutro' };
 
-/* Só o que o recorte manda: tribunal, tipo de ato, busca. O período já foi
-   aplicado na coleta, porque ele define a própria chamada à API. */
+/* Rótulos de percentual dentro dos gráficos — o mesmo do Controle de
+   Publicações, para os dois painéis se lerem da mesma forma. Em barra
+   empilhada cada segmento mostra sua fatia da coluna; a fatia verde É a
+   taxa de êxito. O rótulo só é desenhado quando cabe, para não virar borrão. */
+const plugRotuloPct = {
+  id: 'rotuloPct',
+  afterDatasetsDraw(chart, args, opts) {
+    if (opts && opts.ativo === false) return;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    chart.data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (meta.hidden || ds.type === 'line') return;
+      ctx.font = '700 11px ' + Chart.defaults.font.family;
+      meta.data.forEach((el, i) => {
+        const valor = Number(ds.data[i]) || 0;
+        if (!valor) return;
+        const total = chart.data.datasets.reduce((soma, d, dj) => {
+          if (d.type === 'line' || d.stack !== ds.stack) return soma;
+          return chart.getDatasetMeta(dj).hidden ? soma : soma + (Number(d.data[i]) || 0);
+        }, 0);
+        if (!total) return;
+        const p = el.getProps(['x', 'y', 'base', 'horizontal'], true);
+        const espaco = p.horizontal ? Math.abs(p.x - p.base) : Math.abs(p.base - p.y);
+        if (espaco < 30) return;
+        ctx.fillStyle = 'rgba(9,14,26,.85)';
+        ctx.fillText(Math.round(valor / total * 100) + '%',
+          p.horizontal ? (p.x + p.base) / 2 : p.x,
+          p.horizontal ? p.y : (p.y + p.base) / 2);
+      });
+    });
+    ctx.restore();
+  }
+};
+Chart.register(plugRotuloPct);
+
+function corExito(t) { return t === null ? COR_MUTED : t >= 45 ? COR_VERDE : t >= 25 ? COR_AMARELO : COR_VERMELHO; }
+function classeExito(t) { return t === null ? 'neutro' : t >= 45 ? 'verde' : t >= 25 ? 'amarelo' : 'vermelho'; }
+
+/* ------------------------------------------------------------- recortes */
 function filtrar(pubs) {
   const q = chaveBusca(FILTRO.busca || '');
   return pubs.filter(p => {
     if (FILTRO.tribunais.size && !FILTRO.tribunais.has(p.tribunal)) return false;
     if (FILTRO.tipos.size && !FILTRO.tipos.has(p.ato)) return false;
-    if (q && !casaBusca(FILTRO.busca, p.processo, p.cliente, p.tribunal, p.orgao, p.ato, p.texto)) return false;
+    if (FILTRO.julgamentos.size && !FILTRO.julgamentos.has(p.julgamento)) return false;
+    if (FILTRO.dispositivos.size && !FILTRO.dispositivos.has(p.dispositivo)) return false;
+    if (FILTRO.produtos.size && !FILTRO.produtos.has(p.produto)) return false;
+    if (q && !casaBusca(FILTRO.busca, p.processo, p.cliente, p.autor, p.reu,
+                        p.tribunal, p.orgao, p.ato, p.dispositivo, p.produto,
+                        p.texto)) return false;
     return true;
   });
 }
 
-/* Publicação antiga é dado analítico, não tarefa. Sem esse corte a fila vira
-   ruído no primeiro dia com um histórico grande. */
-const ehOperacional = p => p.disp && (HOJE - p.disp) / 86400000 <= 30 && !p.cancelada;
+/* Decisão é publicação em que o dispositivo aparece escrito. É o universo de
+   toda a análise de resultado: sem dispositivo não há o que contar, e contar
+   assim mesmo transformaria "não deu para ler" em derrota. */
+const ehDecisao = p => p.dispositivo && p.dispositivo !== 'Sem dispositivo' && !p.cancelada;
 
-/* ------------------------------------------------------------ saúde da coleta */
-function renderColeta(d) {
-  const c = d.coleta;
-  const erros = c.oabs.filter(o => o.http !== 200).length + c.erros;
-  const total = c.oabs.reduce((s, o) => s + o.novos, 0);
-  const seg = erros ? 'vermelho' : 'verde';
+const DISPOSITIVOS_SENTENCA = ['Procedente', 'Parcialmente procedente', 'Improcedente',
+                               'Acordo homologado', 'Extinção do processo'];
+const DISPOSITIVOS_RECURSO  = ['Recurso provido', 'Recurso parcialmente provido', 'Recurso não provido'];
+const DISPOSITIVOS_LIMINAR  = ['Liminar deferida', 'Liminar indeferida'];
 
-  document.getElementById('saudeColeta').innerHTML = [
-    itemResumo('Situação', erros ? 'Com falha' : 'Íntegra',
-      erros ? erros + ' erro(s) na coleta' : 'todas as inscrições responderam',
-      erros ? COR_VERMELHO : COR_VERDE),
-    itemResumo('Publicações lidas', num(total),
-      'janela de ' + d.janela.ini.split('-').reverse().join('/') + ' a ' +
-      d.janela.fim.split('-').reverse().join('/'), COR_AZUL),
-    itemResumo('Páginas buscadas', num(c.paginas), '50 itens por página', COR_CIANO),
-    itemResumo('Concluída em', Math.round((c.fim - c.inicio) / 1000) + 's',
-      c.fim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), COR_MUTED)
-  ].join('');
-
-  const tarja = document.getElementById('tarjaColeta');
-  tarja.classList.toggle('oculto', !erros);
-  if (erros) tarja.innerHTML = '<b>Coleta com falha.</b> ' + erros +
-    ' inscrição(ões) não responderam corretamente. Os números abaixo podem estar incompletos — ' +
-    'não leia ausência de publicação como calmaria antes de resolver isto.';
-
-  document.getElementById('corpoColeta').innerHTML = c.oabs.map(o =>
-    '<tr><td><b>' + esc(o.rotulo) + '</b></td>' +
-    '<td><span class="tag-pct ' + (o.http === 200 ? 'verde' : 'vermelho') + '">' + (o.http || 'erro') + '</span></td>' +
-    '<td>' + num(o.count) + '</td><td>' + num(o.novos) + '</td>' +
-    '<td>' + num(o.paginas) + '</td><td>' + (o.ms / 1000).toFixed(1).replace('.', ',') + 's</td>' +
-    '<td style="color:var(--texto-muted)">' + (
-      o.http !== 200 ? 'falha na consulta — verificar a chave' :
-      o.count === 0 ? 'nenhuma publicação nesta janela: carteira parada ou inscrição sem processos ativos' :
-      o.novos < o.count ? num(o.count - o.novos) + ' já vieram por outra inscrição' :
-      'coleta completa') + '</td></tr>'
-  ).join('');
+/* Placar de um conjunto: ganhos, parciais, perdas e o êxito. O êxito conta
+   parcial como meio ganho — parcialmente procedente não é derrota, mas também
+   não é a vitória que se vendeu ao cliente. */
+function placar(itens) {
+  const g = itens.filter(p => p.resultado === 'Favorável').length;
+  const pa = itens.filter(p => p.resultado === 'Parcial').length;
+  const pe = itens.filter(p => p.resultado === 'Desfavorável').length;
+  const base = g + pa + pe;
+  return { total: itens.length, ganhos: g, parciais: pa, perdas: pe,
+           exito: base ? (g + pa * 0.5) / base * 100 : null };
 }
 
-/* --------------------------------------------------------- cartões do dia */
-/* O kit compartilhado liga os cartões procurando por '#kpis'. Aqui existem
-   dois conjuntos — operação e CEO — então o seletor fixo não encontra nada e
-   o drill-down morre em silêncio. Esta versão recebe o container. */
-function ligarKPIsEm(container, mapa) {
-  const cartoes = document.querySelectorAll('#' + container + ' .kpi');
-  Object.keys(mapa).forEach(i => {
-    const el = cartoes[Number(i)];
-    if (!el) return;
-    el.classList.add('kpi-clicavel');
-    el.title = 'Clique para ver os registros';
-    el.addEventListener('click', mapa[i]);
-  });
+function agrupar(itens, chave) {
+  const m = new Map();
+  for (const it of itens) {
+    const k = chave(it) || '—';
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(it);
+  }
+  return m;
 }
 
-function renderKPIsOperacao(d, f) {
-  const oper = f.filter(ehOperacional);
-  const hoje = oper.filter(p => p.disp && p.disp.getTime() === HOJE.getTime());
-  const comPrazo = oper.filter(p => p.exigePrazo && p.fatal);
-  const em72h = comPrazo.filter(p => (p.fatal - HOJE) / 86400000 <= 3 && (p.fatal - HOJE) >= 0);
-  const vencidos = comPrazo.filter(p => p.fatal < HOJE);
-  const orfas = oper.filter(p => p.orfa);
-  const desfav = f.filter(p => p.resultado === 'Desfavorável' &&
-    p.disp && (HOJE - p.disp) / 86400000 <= 7);
-  const comValor = f.filter(p => p.temValor);
-  const somaValor = comValor.reduce((s, p) => s + (p.valor || 0), 0);
-  const baixaConf = oper.filter(p => p.exigePrazo && p.confianca < METAS.confiancaMinima);
+const mesDe = d => d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') : null;
+const mesBR = k => {
+  const [a, m] = k.split('-');
+  return ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][Number(m) - 1] +
+         '/' + a.slice(2);
+};
 
-  document.getElementById('kpisOperacao').innerHTML = [
-    cartaoKPI('Novas hoje', num(hoje.length), 'azul',
-      '<span>disponibilizadas em ' + dtBR(HOJE) + '</span>'),
-    cartaoKPI('Fila de triagem', num(oper.length),
-      oper.length ? 'amarelo' : 'verde',
-      '<span>publicações dos últimos 30 dias · meta ao fim do dia: <b>' + METAS.filaZeradaAoFimDoDia + '</b></span>'),
-    cartaoKPI('Prazos em 72h', num(em72h.length), em72h.length ? 'vermelho' : 'verde',
-      '<span>' + (vencidos.length ? '<b>' + num(vencidos.length) + '</b> já vencidos' : 'nenhum vencido') + '</span>'),
-    cartaoKPI('Publicações órfãs', num(orfas.length), orfas.length ? 'amarelo' : 'verde',
-      '<span>sem processo correspondente na base</span>'),
-    cartaoKPI('Desfavoráveis na semana', num(desfav.length), desfav.length ? 'vermelho' : 'verde',
-      '<span>gatilho de recurso</span>'),
-    cartaoKPI('Valor citado no período', somaValor ? moeda(somaValor) : num(comValor.length),
-      comValor.length ? 'roxo' : 'neutro',
-      '<span><b>' + num(comValor.length) + '</b> publicações citam dinheiro</span>'),
-    cartaoKPI('Confiança baixa', num(baixaConf.length), baixaConf.length ? 'amarelo' : 'verde',
-      '<span>abaixo de ' + METAS.confiancaMinima + '% — leitura humana obrigatória</span>'),
-    cartaoKPI('Canceladas', num(f.filter(p => p.cancelada).length),
-      f.some(p => p.cancelada) ? 'vermelho' : 'verde',
-      '<span>prazos derivados delas precisam ser revistos</span>')
-  ].join('');
-
-  ligarKPIsEm('kpisOperacao', {
-    0: () => listaPubs('Publicações de Hoje', hoje),
-    1: () => listaPubs('Fila de Triagem', oper,
-      'Só entram publicações dos últimos 30 dias e não canceladas. Histórico é dado analítico, não tarefa.'),
-    2: () => listaPubs('Prazos nos Próximos 3 Dias', em72h.concat(vencidos),
-      vencidos.length ? '<b>' + num(vencidos.length) + '</b> já passaram do prazo sugerido.' : null, 'critico'),
-    3: () => listaPubs('Publicações Órfãs', orfas,
-      'Não há processo com este número na base do DataJud. Ou a carteira está desatualizada, ou é processo de terceiro.', 'alerta'),
-    4: () => listaPubs('Resultados Desfavoráveis na Semana', desfav, null, 'alerta'),
-    5: () => listaPubs('Publicações com Valor Citado', comValor),
-    6: () => listaPubs('Classificação com Confiança Baixa', baixaConf,
-      'A leitura automática não teve elementos suficientes. Estas exigem leitura humana antes de qualquer prazo.', 'alerta'),
-    7: () => listaPubs('Publicações Canceladas', f.filter(p => p.cancelada),
-      'Publicação cancelada não some da base. Se algum prazo nasceu dela, ele precisa ser revisto.', 'critico')
-  });
-}
-
-/* --------------------------------------------------------------- semáforo */
-function renderSemaforo(f) {
-  const oper = f.filter(p => ehOperacional(p) && p.exigePrazo && p.fatal);
-  const faixas = [
-    { r: 'Vencido', teste: d => d < 0, cor: COR_VERMELHO },
-    { r: 'Hoje (D-0)', teste: d => d === 0, cor: COR_VERMELHO },
-    { r: 'Amanhã (D-1)', teste: d => d === 1, cor: COR_AMARELO },
-    { r: 'D-2 e D-3', teste: d => d >= 2 && d <= 3, cor: COR_AMARELO },
-    { r: 'D+4 a D+10', teste: d => d >= 4 && d <= 10, cor: COR_CIANO }
-  ];
-  document.getElementById('semaforo').innerHTML = faixas.map(fx => {
-    const itens = oper.filter(p => fx.teste(Math.round((p.fatal - HOJE) / 86400000)));
-    return '<div class="sem-col" style="border-top-color:' + fx.cor + '">' +
-      '<div class="sem-topo"><span class="sem-rot">' + fx.r + '</span>' +
-      '<span class="sem-qtd" style="color:' + fx.cor + '">' + itens.length + '</span></div>' +
-      (itens.length ? itens.slice(0, 12).map(p =>
-        '<div class="sem-card" data-id="' + esc(p.id) + '">' +
-        '<div class="sem-proc">' + esc(p.processo || '—') + '</div>' +
-        '<div class="sem-cli">' + esc(p.cliente || (p.orfa ? 'sem vínculo na base' : '—')) + '</div>' +
-        '<div class="sem-ato">' + esc(p.ato) + ' · ' + p.prazoDias + ' dias úteis</div>' +
-        '<div class="sem-conf ' + (p.confianca < METAS.confiancaMinima ? 'baixa' : '') + '">' +
-        'confiança ' + p.confianca + '%</div></div>').join('')
-        : '<div class="sem-vazio">nada nesta faixa</div>') +
-      (itens.length > 12 ? '<div class="sem-vazio">+ ' + (itens.length - 12) + ' não exibidos</div>' : '') +
-      '</div>';
-  }).join('');
-
-  document.querySelectorAll('.sem-card').forEach(el => {
-    el.onclick = () => {
-      const p = BASE.pubs.find(x => x.id === el.dataset.id);
-      if (p) abrirDetalhe(fichaPub(p));
-    };
-  });
-}
-
-/* ------------------------------------------------------------------- fila */
+/* ============================================================ LISTAS E FICHA */
 const COL_PUB = [
-  { r: 'Disponibilização', chave: 'disp', formata: (v, l) => dtBR(v) +
+  { r: 'Data', chave: 'disp', formata: (v, l) => dtBR(v) +
       '<br><span style="color:var(--texto-muted);font-size:.72rem">' + esc(l.tribunal) + '</span>' },
   { r: 'Processo', chave: 'processo', formata: (v, l) => '<b>' + esc(v || '—') + '</b>' +
       '<br><span style="color:var(--texto-muted);font-size:.72rem">' +
-      esc(l.cliente || (l.orfa ? 'órfã — sem processo na base' : '')) + '</span>' },
-  { r: 'Tipo de ato', chave: 'ato', formata: (v, l) => esc(v) +
-      (l.cancelada ? ' <span class="tag-pct vermelho">cancelada</span>' : '') },
-  { r: 'Prazo sugerido', chave: 'fatal', formata: (v, l) => !l.exigePrazo
-      ? '<span style="color:var(--texto-muted)">não exige</span>'
-      : dtBR(v) + '<br><span style="color:var(--texto-muted);font-size:.72rem">' +
-        l.prazoDias + ' dias ' + l.contagem + '</span>' },
-  { r: 'Confiança', chave: 'confianca', formata: v => '<span class="tag-pct ' +
-      (v >= 80 ? 'verde' : v >= METAS.confiancaMinima ? 'amarelo' : 'vermelho') + '">' + v + '%</span>' },
-  { r: 'Resultado', chave: 'resultado', formata: (v, l) => v === 'Não aplicável'
+      esc(l.cliente || (l.orfa ? 'sem processo na base' : '')) + '</span>' },
+  { r: 'Produto', chave: 'produto', formata: (v, l) => esc(v || '—') +
+      (l.reu ? '<br><span style="color:var(--texto-muted);font-size:.72rem">contra ' +
+       esc(String(l.reu).slice(0, 34)) + '</span>' : '') },
+  { r: 'Julgamento', chave: 'julgamento', formata: (v, l) => esc(v) +
+      (l.recurso ? '<br><span style="color:var(--texto-muted);font-size:.72rem">' + esc(l.recurso) + '</span>' : '') },
+  { r: 'Resultado', chave: 'dispositivo', formata: (v, l) => v === 'Sem dispositivo'
       ? '<span style="color:var(--texto-muted)">—</span>'
-      : '<span class="tag-pct ' + (v === 'Favorável' ? 'verde' : v === 'Desfavorável' ? 'vermelho' : 'amarelo') +
-        '">' + esc(v) + '</span>' + (l.detalhe ? '<br><span style="color:var(--texto-muted);font-size:.72rem">' + esc(l.detalhe) + '</span>' : '') }
+      : '<span class="tag-pct ' + (l.resultado === 'Favorável' ? 'verde'
+          : l.resultado === 'Desfavorável' ? 'vermelho'
+          : l.resultado === 'Parcial' ? 'amarelo' : 'neutro') + '">' + esc(v) + '</span>' },
+  { r: 'Condenação', chave: 'condenacao', alinha: 'dir',
+    formata: v => v ? moeda(v) : '<span style="color:var(--texto-muted)">—</span>' },
+  { r: 'Confiança', chave: 'confianca', formata: v => '<span class="tag-pct ' +
+      (v >= 80 ? 'verde' : v >= METAS.confiancaMinima ? 'amarelo' : 'vermelho') + '">' + v + '%</span>' }
 ];
 
 function listaPubs(titulo, itens, nota, tipo) {
   const ord = [...itens].sort((a, b) => (b.disp ? b.disp.getTime() : 0) - (a.disp ? a.disp.getTime() : 0));
   abrirLista({
     titulo, sub: itens.length + ' publicaç' + (itens.length === 1 ? 'ão' : 'ões'),
-    colunas: COL_PUB,
-    linhas: ord,
+    colunas: COL_PUB, linhas: ord, limite: 400,
     vazio: 'Nenhuma publicação nesta condição.',
     notas: nota ? [{ tipo: tipo || '', html: nota }] : []
   });
 
   /* O kit desenha a lista mas não liga clique por linha. Sem isto a lista é um
-     beco: mostra o processo e não deixa abrir a ficha com as três datas do
-     art. 224 e o link da certidão — que é justamente o que se vai conferir. */
+     beco: mostra o processo e não deixa abrir a ficha com o texto do
+     dispositivo e o link da certidão — que é o que se vai conferir. */
   const corpo = document.querySelector('#modalCorpo tbody');
   if (!corpo) return;
   [...corpo.rows].forEach((tr, i) => {
@@ -1825,8 +2230,6 @@ function listaPubs(titulo, itens, nota, tipo) {
   });
 }
 
-/* Botão de retorno: quem entrou pela lista precisa voltar para ela, não para
-   o painel inteiro — senão perde o recorte que estava conferindo. */
 function voltarPara(caixa, aoVoltar, rotulo) {
   if (!caixa) return;
   const b = document.createElement('button');
@@ -1839,202 +2242,859 @@ function voltarPara(caixa, aoVoltar, rotulo) {
 }
 
 function fichaPub(p) {
+  const vals = (p.valores || []).slice(0, 12);
   return {
     titulo: esc(p.processo || 'Sem número de processo'),
     sub: esc(p.tribunal) + ' · ' + esc(p.orgao),
     blocos: [
+      { titulo: 'O que foi decidido', campos: [
+        { r: 'Julgamento', v: esc(p.julgamento) + (p.recurso ? ' — ' + esc(p.recurso) : '') },
+        { r: 'Resultado', v: p.dispositivo === 'Sem dispositivo'
+            ? '<span style="color:var(--texto-muted)">o texto não traz dispositivo</span>'
+            : '<b>' + esc(p.dispositivo) + '</b>' },
+        { r: 'Condenação identificada', v: p.condenacao ? '<b>' + moeda(p.condenacao) + '</b>' : '—' },
+        { r: 'Trânsito em julgado', v: p.transitou ? 'mencionado no texto' : 'não mencionado' },
+        { r: 'Confiança da leitura', v: '<span class="tag-pct ' +
+            (p.confianca >= 80 ? 'verde' : p.confianca >= METAS.confiancaMinima ? 'amarelo' : 'vermelho') +
+            '">' + p.confianca + '%</span>' }
+      ]},
+      { titulo: 'Partes e produto (planilha Clientes e Processos)', campos: [
+        { r: 'Autor', v: esc(p.autor || '—'), largo: true },
+        { r: 'Réu', v: esc(p.reu || '—'), largo: true },
+        { r: 'Cliente representado', v: esc(p.polo ? p.polo : '—') },
+        { r: 'Produto jurídico', v: esc(p.produto || '—') +
+            (p.produtoCadastrado ? '' : ' <span class="tag-pct amarelo">deduzido do assunto</span>') }
+      ]},
+      { titulo: 'Registro do escritório (planilha DataJud)', campos: [
+        { r: 'Resultado da sentença', v: esc(p.resSentenca || 'sem registro') },
+        { r: 'Resultado do recurso', v: esc(p.resRecurso || 'sem registro') },
+        { r: 'Situação do alvará', v: esc(p.alvara || 'sem registro') },
+        { r: 'Valor da causa', v: p.valorCausa ? moeda(p.valorCausa) : '—' },
+        { r: 'Fase processual', v: esc(p.faseProc || '—') }
+      ]},
+      vals.length ? { titulo: 'Valores citados no texto', campos: vals.map((v, i) => ({
+        r: v.tipo, v: '<b>' + moeda(v.valor) + '</b><br><span style="color:var(--texto-muted);font-size:.74rem">…' +
+           esc(v.trecho) + '…</span>', largo: true
+      })) } : null,
       { titulo: 'As três datas do prazo', campos: [
         { r: 'Disponibilização', v: dtBR(p.disp) },
         { r: 'Publicação', v: dtBR(p.pub) },
         { r: 'Início do prazo', v: dtBR(p.inicioPrazo) },
-        { r: 'Prazo fatal sugerido', v: p.fatal
-            ? '<b>' + dtBR(p.fatal) + '</b> (' + p.prazoDias + ' dias ' + p.contagem + ')'
+        { r: 'Prazo sugerido', v: p.fatal
+            ? dtBR(p.fatal) + ' (' + p.prazoDias + ' dias ' + p.contagem + ')'
             : '<span style="color:var(--texto-muted)">este ato não exige prazo</span>', largo: true }
       ]},
-      { titulo: 'Leitura automática', campos: [
-        { r: 'Tipo de ato', v: esc(p.ato) },
-        { r: 'Confiança', v: '<span class="tag-pct ' +
-            (p.confianca >= 80 ? 'verde' : p.confianca >= METAS.confiancaMinima ? 'amarelo' : 'vermelho') +
-            '">' + p.confianca + '%</span>' },
-        { r: 'Resultado', v: esc(p.resultado) + (p.detalhe ? ' — ' + esc(p.detalhe) : '') },
-        p.temValor ? { r: 'Valor citado', v: p.valor ? moeda(p.valor) : 'menção sem valor numérico' } : null
-      ].filter(Boolean) },
       { titulo: 'Origem', campos: [
-        { r: 'Inscrições que trouxeram', v: p.oabs.map(c => (OABS.find(o => o.chave === c) || {}).rotulo || c).join(' · '), largo: true },
+        { r: 'Tipo de ato', v: esc(p.ato) },
         { r: 'Classe', v: esc(p.classe || '—') },
-        { r: 'Meio', v: esc(p.meio || '—') },
-        { r: 'Destinatários', v: esc(p.destinatarios || '—'), largo: true },
+        { r: 'Inscrições que trouxeram', v: p.oabs.map(c => (OABS.find(o => o.chave === c) || {}).rotulo || c).join(' · '), largo: true },
         { r: 'ID no DJEN', v: esc(p.id) }
       ]},
       { titulo: 'Texto integral', campos: [
         { r: 'Publicação', v: esc(p.texto || '—'), largo: true, classe: 'texto' }
       ]}
-    ],
+    ].filter(Boolean),
     notas: [
       p.cancelada ? { tipo: 'critico', html: 'Publicação <b>cancelada</b>' +
-        (p.motivoCancelamento ? ': ' + esc(p.motivoCancelamento) : '') +
-        '. Qualquer prazo aberto com base nela nasceu morto e precisa ser revisto.' } : null,
+        (p.motivoCancelamento ? ': ' + esc(p.motivoCancelamento) : '') + '.' } : null,
       p.orfa ? { tipo: 'alerta', html: 'Não há processo com este número na base do DataJud. ' +
-        'Ou a carteira está desatualizada, ou a publicação é de processo de terceiro.' } : null,
+        'Sem esse par, o painel não sabe cliente nem produto — ou a carteira está desatualizada, ' +
+        'ou a publicação é de processo de terceiro.' } : null,
       p.confianca < METAS.confiancaMinima ? { tipo: 'alerta', html:
-        'Confiança abaixo de <b>' + METAS.confiancaMinima + '%</b>. A leitura automática não teve elementos ' +
-        'suficientes — <b>leitura humana obrigatória</b> antes de lançar qualquer prazo.' } : null
+        'Confiança abaixo de <b>' + METAS.confiancaMinima + '%</b>. A leitura automática não teve ' +
+        'elementos suficientes — <b>confira o texto antes de usar este resultado</b>.' } : null,
+      divergencia(p) ? { tipo: 'alerta', html: divergencia(p) } : null
     ].filter(Boolean),
     acoes: [
-      p.hash ? { rotulo: '&#128196; Certidão oficial (PDF)',
-                 href: API_DJEN + '/' + p.hash + '/certidao' } : null,
+      p.hash ? { rotulo: '&#128196; Certidão oficial (PDF)', href: API_DJEN + '/' + p.hash + '/certidao' } : null,
       p.link ? { rotulo: '&#128279; Documento no tribunal', href: p.link } : null
     ].filter(Boolean)
   };
 }
 
-function renderFila(f) {
-  const oper = f.filter(ehOperacional)
-    .sort((a, b) => {
-      const ordem = { 'crítica': 0, 'alta': 1, 'média': 2, 'baixa': 3 };
-      const d = ordem[a.urgencia] - ordem[b.urgencia];
-      return d !== 0 ? d : (b.disp ? b.disp.getTime() : 0) - (a.disp ? a.disp.getTime() : 0);
-    });
-  const vis = oper.slice(0, 200);
-
-  document.getElementById('subFila').innerHTML =
-    '<b>' + num(oper.length) + '</b> publicações dos últimos 30 dias aguardando tratamento. ' +
-    'O histórico completo do período fica nos blocos de análise — publicação antiga é dado, não tarefa.';
-
-  document.getElementById('corpoFila').innerHTML = vis.length ? vis.map(p => {
-    const idade = p.disp ? Math.round((HOJE - p.disp) / 86400000) : null;
-    const corIdade = idade === null ? 'neutro' : idade <= 1 ? 'verde' : idade <= 2 ? 'amarelo' : 'vermelho';
-    return '<tr>' +
-      '<td><span class="tag-pct ' + CLASSE_URG[p.urgencia] + '">' + p.urgencia + '</span></td>' +
-      '<td>' + dtBR(p.disp) + '<br><span class="tag-pct ' + corIdade + '">' +
-        (idade === null ? '—' : idade + ' d') + '</span></td>' +
-      '<td>' + esc(p.tribunal) + '</td>' +
-      '<td><b>' + esc(p.processo || '—') + '</b></td>' +
-      '<td style="white-space:normal;max-width:170px">' + (p.cliente ? esc(p.cliente) :
-        (p.orfa ? '<span style="color:var(--vermelho)">órfã</span>' : '—')) + '</td>' +
-      '<td>' + esc(p.ato) + '</td>' +
-      '<td style="white-space:normal;max-width:300px;color:var(--texto-muted)">' +
-        esc((p.texto || '').replace(/\s+/g, ' ').slice(0, 130)) + '…</td>' +
-      '<td>' + (p.exigePrazo && p.fatal ? dtBR(p.fatal) : '—') + '</td>' +
-      '<td><span class="tag-pct ' + (p.confianca >= 80 ? 'verde' :
-        p.confianca >= METAS.confiancaMinima ? 'amarelo' : 'vermelho') + '">' + p.confianca + '%</span></td>' +
-      '<td>' + (p.resultado === 'Não aplicável' ? '—' :
-        '<span class="tag-pct ' + (p.resultado === 'Favorável' ? 'verde' :
-          p.resultado === 'Desfavorável' ? 'vermelho' : 'amarelo') + '">' + esc(p.resultado) + '</span>') + '</td>' +
-      '</tr>';
-  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Fila vazia neste recorte.</td></tr>';
-
-  if (vis.length) tabelaClicavel('corpoFila', vis, fichaPub);
-  document.getElementById('notaFila').textContent =
-    'Exibindo ' + vis.length + ' de ' + oper.length +
-    (oper.length > vis.length ? ' (limitado às 200 mais urgentes).' : '.');
+/* O diário publicou uma sentença e a planilha ainda diz "Não Sentenciado"?
+   Isso não é erro de leitura, é registro atrasado — e é o que faz um processo
+   ganho ficar sem execução. */
+function divergencia(p) {
+  if (p.orfa || !ehDecisao(p)) return null;
+  const reg = String(p.resSentenca || '');
+  if (DISPOSITIVOS_SENTENCA.indexOf(p.dispositivo) < 0) return null;
+  if (!reg || /não sentenciado|nao sentenciado/i.test(reg)) {
+    return 'O diário publicou <b>' + esc(p.dispositivo) + '</b>, mas a planilha ainda registra ' +
+           '<b>' + esc(reg || 'nada') + '</b>. O registro está atrás do diário.';
+  }
+  return null;
 }
 
-/* ---------------------------------------------------------------- alertas */
-function renderAlertas(d, f) {
-  const A = [];
-  const oper = f.filter(ehOperacional);
-  const semResp = oper.filter(p => p.exigePrazo && p.fatal &&
-    (p.fatal - HOJE) / 86400000 <= 1);
-  const orfas24 = oper.filter(p => p.orfa && p.disp && (HOJE - p.disp) / 86400000 >= 1);
-  const canceladas = f.filter(p => p.cancelada);
-  const desfav = f.filter(p => p.resultado === 'Desfavorável' &&
-    /Sentença|Acórdão/.test(p.ato));
-  const baixaConf = oper.filter(p => p.exigePrazo && p.confianca < METAS.confiancaMinima);
-  const errosColeta = d.coleta.oabs.filter(o => o.http !== 200);
-  const semRetorno = d.coleta.oabs.filter(o => o.http === 200 && o.count === 0);
+/* =============================================================== RESULTADOS */
+function renderKPIsResultado(f) {
+  const dec = f.filter(ehDecisao);
+  const pl = placar(dec);
+  const sent = dec.filter(p => p.julgamento === 'Sentença');
+  const acor = dec.filter(p => p.julgamento === 'Recurso');
+  const lim = dec.filter(p => p.julgamento === 'Liminar');
+  const cond = dec.filter(p => p.condenacao > 0);
+  const somaCond = cond.reduce((s, p) => s + p.condenacao, 0);
 
-  if (errosColeta.length) A.push(['critico', '&#9888;', 'Coleta falhou em ' + errosColeta.length + ' inscrição(ões)',
-    errosColeta.map(o => o.rotulo + ' (HTTP ' + (o.http || 'sem resposta') + ')').join(', ') +
-    '. <b>Enquanto isso não for resolvido, nenhum número deste painel é confiável.</b> ' +
-    '<b>Providência:</b> reconsultar; se persistir, verificar se a API mudou de contrato.']);
-
-  if (semResp.length) A.push(['critico', '&#9203;', num(semResp.length) + ' prazo(s) vencendo em até 1 dia',
-    'Prazo sugerido pela leitura do texto, ainda sem validação registrada. ' +
-    '<b>Providência:</b> abrir o semáforo, conferir o texto e atribuir responsável hoje.']);
-
-  if (canceladas.length) A.push(['critico', '&#128465;', num(canceladas.length) + ' publicação(ões) cancelada(s)',
-    'Publicação cancelada pelo tribunal depois de disponibilizada. ' +
-    'Se algum prazo foi aberto com base nelas, ele nasceu morto. ' +
-    '<b>Providência:</b> revisar cada uma e cancelar o prazo correspondente.']);
-
-  if (semRetorno.length) A.push(['alerta', '&#128246;', 'Inscrição sem nenhuma publicação na janela',
-    semRetorno.map(o => o.rotulo).join(', ') + ' respondeu HTTP 200 com zero resultados. ' +
-    'Pode ser carteira parada naquele estado ou chave de consulta que deixou de casar. ' +
-    '<b>Providência:</b> ampliar a janela para 12 meses e confirmar.']);
-
-  if (orfas24.length) A.push(['alerta', '&#128269;', num(orfas24.length) + ' publicação(ões) órfã(s) há mais de 24h',
-    'Chegaram publicações de processos que não estão na base do DataJud. ' +
-    '<b>Providência:</b> cadastrar o processo ou confirmar que a publicação é de terceiro.']);
-
-  if (desfav.length) A.push(['alerta', '&#128201;', num(desfav.length) + ' decisão(ões) desfavorável(is) publicada(s)',
-    'Sentenças e acórdãos com resultado contrário no período. Cada um é gatilho de recurso com prazo correndo. ' +
-    '<b>Providência:</b> revisar e decidir sobre recurso antes do fim do prazo.']);
-
-  if (baixaConf.length) A.push(['alerta', '&#129300;', num(baixaConf.length) + ' classificação(ões) com confiança baixa',
-    'A leitura automática não encontrou o prazo escrito no texto e assumiu 15 dias úteis. ' +
-    '<b>Providência:</b> leitura humana obrigatória antes de lançar qualquer um destes prazos.']);
-
-  const mudos = processosMudos(d);
-  if (mudos.length) A.push(['alerta', '&#128263;', num(mudos.length) + ' processo(s) mudo(s)',
-    'Processos ativos sem nenhuma publicação há mais de ' + METAS.processoMudoDias + ' dias. ' +
-    'É o padrão que antecede arquivamento silencioso. <b>Providência:</b> diligenciar os mais antigos.']);
-
-  document.getElementById('alertas').innerHTML = A.length
-    ? A.map(a => obsCard(a[0], a[1], a[2], a[3])).join('')
-    : obsCard('ok', '&#10003;', 'Nada exigindo ação agora',
-        'Coleta íntegra, sem prazo crítico e sem publicação órfã no recorte atual.');
-}
-
-/* -------------------------------------------------------------- análise */
-function renderResultados(f) {
-  const cont = {};
-  for (const p of f) cont[p.resultado] = (cont[p.resultado] || 0) + 1;
-  const decisivas = f.filter(p => p.resultado !== 'Não aplicável');
-  const fav = decisivas.filter(p => p.resultado === 'Favorável').length;
-  const desf = decisivas.filter(p => p.resultado === 'Desfavorável').length;
-
-  document.getElementById('resumoResultado').innerHTML = [
-    itemResumo('Publicações no recorte', num(f.length), 'todas as inscrições, deduplicadas', COR_AZUL),
-    itemResumo('Com dispositivo legível', num(decisivas.length),
-      pct1(f.length ? decisivas.length / f.length * 100 : null) + ' do total', COR_CIANO),
-    itemResumo('Favoráveis', num(fav),
-      pct1(decisivas.length ? fav / decisivas.length * 100 : null) + ' das decisivas', COR_VERDE),
-    itemResumo('Desfavoráveis', num(desf),
-      pct1(decisivas.length ? desf / decisivas.length * 100 : null) + ' das decisivas', COR_VERMELHO)
+  document.getElementById('kpisResultado').innerHTML = [
+    cartaoKPI('Decisões no período', num(dec.length), 'azul',
+      '<span>de <b>' + num(f.length) + '</b> publicações lidas</span>'),
+    cartaoKPI('Taxa de êxito', pct1(pl.exito), classeExito(pl.exito),
+      '<span><b>' + num(pl.ganhos) + '</b> a favor · <b>' + num(pl.parciais) + '</b> parciais · <b>' +
+      num(pl.perdas) + '</b> contra</span>'),
+    cartaoKPI('Sentenças', num(sent.length), 'roxo',
+      '<span>êxito de <b>' + pct1(placar(sent).exito) + '</b></span>'),
+    cartaoKPI('Acórdãos', num(acor.length), 'ciano',
+      '<span>êxito de <b>' + pct1(placar(acor).exito) + '</b></span>'),
+    cartaoKPI('Liminares', num(lim.length), 'amarelo',
+      '<span>êxito de <b>' + pct1(placar(lim).exito) + '</b></span>'),
+    cartaoKPI('Condenação identificada', somaCond ? moeda(somaCond) : '—', somaCond ? 'verde' : 'neutro',
+      '<span>em <b>' + num(cond.length) + '</b> decisões</span>'),
+    cartaoKPI('Trânsitos em julgado', num(dec.filter(p => p.transitou).length), 'verde',
+      '<span>mencionados no texto — conferir execução</span>'),
+    cartaoKPI('Leitura de baixa confiança', num(dec.filter(p => p.confianca < METAS.confiancaMinima).length),
+      dec.some(p => p.confianca < METAS.confiancaMinima) ? 'amarelo' : 'verde',
+      '<span>abaixo de ' + METAS.confiancaMinima + '% — conferir no texto</span>')
   ].join('');
 
-  const porTrib = {};
-  for (const p of decisivas) {
-    (porTrib[p.tribunal] = porTrib[p.tribunal] || { f: 0, d: 0, p: 0 });
-    if (p.resultado === 'Favorável') porTrib[p.tribunal].f++;
-    else if (p.resultado === 'Desfavorável') porTrib[p.tribunal].d++;
-    else porTrib[p.tribunal].p++;
-  }
-  const tribs = Object.entries(porTrib).sort((a, b) =>
-    (b[1].f + b[1].d + b[1].p) - (a[1].f + a[1].d + a[1].p)).slice(0, 10);
+  ligarKPIsEm('kpisResultado', {
+    0: () => listaPubs('Decisões do Período', dec),
+    1: () => listaPubs('Decisões Favoráveis e Parciais',
+        dec.filter(p => p.resultado === 'Favorável' || p.resultado === 'Parcial')),
+    2: () => listaPubs('Sentenças', sent),
+    3: () => listaPubs('Acórdãos', acor),
+    4: () => listaPubs('Liminares', lim),
+    5: () => listaPubs('Decisões com Condenação Identificada', cond),
+    6: () => listaPubs('Trânsitos em Julgado', dec.filter(p => p.transitou),
+        'Receita conquistada. Conferir se a execução ou o levantamento já foi iniciado.', 'alerta'),
+    7: () => listaPubs('Leitura de Baixa Confiança', dec.filter(p => p.confianca < METAS.confiancaMinima),
+        'A leitura automática não teve elementos suficientes. Confira o texto antes de usar estes resultados.', 'alerta')
+  });
+}
 
-  destruir('resTribunal');
-  graficos.resTribunal = new Chart(document.getElementById('grafResTribunal'), {
+function ligarKPIsEm(container, mapa) {
+  const cartoes = document.querySelectorAll('#' + container + ' .kpi');
+  Object.keys(mapa).forEach(i => {
+    const el = cartoes[Number(i)];
+    if (!el) return;
+    el.classList.add('kpi-clicavel');
+    el.title = 'Clique para ver os registros';
+    el.addEventListener('click', mapa[i]);
+  });
+}
+
+function renderSentencas(f) {
+  const sent = f.filter(p => ehDecisao(p) && p.julgamento === 'Sentença');
+  const por = d => sent.filter(p => p.dispositivo === d);
+  const merito = por('Procedente').length + por('Parcialmente procedente').length + por('Improcedente').length;
+  const proc = por('Procedente').length + por('Parcialmente procedente').length;
+
+  document.getElementById('resumoSentenca').innerHTML = [
+    itemResumo('Procedentes', num(por('Procedente').length),
+      merito ? pct1(por('Procedente').length / merito * 100) + ' do mérito julgado' : 'sem mérito julgado', COR_VERDE),
+    itemResumo('Parcialmente procedentes', num(por('Parcialmente procedente').length),
+      'ganho que não foi integral', COR_AMARELO),
+    itemResumo('Improcedentes', num(por('Improcedente').length),
+      merito ? pct1(por('Improcedente').length / merito * 100) + ' do mérito julgado' : '—', COR_VERMELHO),
+    itemResumo('Extinção do processo', num(por('Extinção do processo').length),
+      'sem julgamento de mérito — cabe reajuizar', COR_MUTED),
+    itemResumo('Acordo homologado', num(por('Acordo homologado').length),
+      'encerra com receita, sem risco de recurso', COR_CIANO),
+    itemResumo('Procedência sobre o mérito', merito ? pct1(proc / merito * 100) : '—',
+      merito ? num(merito) + ' sentenças de mérito' : 'nada julgado no mérito', corExito(merito ? proc / merito * 100 : null))
+  ].join('');
+
+  /* Volume por mês, empilhado por resultado: mostra ao mesmo tempo se o
+     escritório está sendo julgado mais e se está ganhando mais. */
+  const meses = [...new Set(sent.map(p => mesDe(p.disp)).filter(Boolean))].sort();
+  const serie = (nome, cor) => ({
+    label: nome, stack: 's', backgroundColor: cor, borderRadius: 2,
+    data: meses.map(m => sent.filter(p => mesDe(p.disp) === m && p.dispositivo === nome).length)
+  });
+  destruir('sentMes');
+  graficos.sentMes = new Chart(document.getElementById('grafSentencaMes'), {
     type: 'bar',
-    data: { labels: tribs.map(t => t[0]), datasets: [
-      { label: 'Favorável', data: tribs.map(t => t[1].f), backgroundColor: COR_VERDE, borderRadius: 3, stack: 'r' },
-      { label: 'Parcial', data: tribs.map(t => t[1].p), backgroundColor: COR_AMARELO, borderRadius: 3, stack: 'r' },
-      { label: 'Desfavorável', data: tribs.map(t => t[1].d), backgroundColor: COR_VERMELHO, borderRadius: 3, stack: 'r' }
+    data: { labels: meses.map(mesBR), datasets: [
+      serie('Procedente', COR_VERDE),
+      serie('Parcialmente procedente', COR_AMARELO),
+      serie('Improcedente', COR_VERMELHO),
+      serie('Acordo homologado', COR_CIANO),
+      serie('Extinção do processo', COR_MUTED)
     ]},
     options: { responsive: true, maintainAspectRatio: false,
-      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: COR_BORDA } } } }
+      onClick: (ev, els) => {
+        if (!els.length) return;
+        const m = meses[els[0].index];
+        const nome = graficos.sentMes.data.datasets[els[0].datasetIndex].label;
+        listaPubs(nome + ' — ' + mesBR(m),
+          sent.filter(p => mesDe(p.disp) === m && p.dispositivo === nome));
+      },
+      scales: { x: { stacked: true, grid: { display: false } },
+                y: { stacked: true, grid: { color: COR_BORDA } } },
+      plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+function renderAcordaos(f) {
+  const acor = f.filter(p => ehDecisao(p) && p.julgamento === 'Recurso');
+  const pl = placar(acor);
+  document.getElementById('resumoAcordao').innerHTML = [
+    itemResumo('Acórdãos julgados', num(acor.length), 'com dispositivo legível no texto', COR_AZUL),
+    itemResumo('Provido', num(acor.filter(p => p.dispositivo === 'Recurso provido').length),
+      'reforma a favor', COR_VERDE),
+    itemResumo('Parcialmente provido', num(acor.filter(p => p.dispositivo === 'Recurso parcialmente provido').length),
+      'reforma parcial', COR_AMARELO),
+    itemResumo('Não provido', num(acor.filter(p => p.dispositivo === 'Recurso não provido').length),
+      'mantida a decisão recorrida', COR_VERMELHO),
+    itemResumo('Êxito recursal', pct1(pl.exito),
+      'parcial conta como meio ganho', corExito(pl.exito))
+  ].join('');
+
+  const grupos = [...agrupar(acor, p => p.recurso || 'Outros recursos').entries()]
+    .sort((a, b) => b[1].length - a[1].length);
+  document.getElementById('corpoRecurso').innerHTML = grupos.length ? grupos.map(([nome, itens]) => {
+    const g = placar(itens);
+    return '<tr><td><b>' + esc(nome) + '</b></td>' +
+      '<td>' + num(itens.length) + '</td>' +
+      '<td>' + num(itens.filter(p => p.dispositivo === 'Recurso provido').length) + '</td>' +
+      '<td>' + num(itens.filter(p => p.dispositivo === 'Recurso parcialmente provido').length) + '</td>' +
+      '<td>' + num(itens.filter(p => p.dispositivo === 'Recurso não provido').length) + '</td>' +
+      '<td><span class="tag-pct ' + classeExito(g.exito) + '">' + pct1(g.exito) + '</span></td></tr>';
+  }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhum acórdão com dispositivo legível no recorte.</td></tr>';
+  if (grupos.length) tabelaClicavel('corpoRecurso', grupos.map(g => g[1]), itens => {
+    listaPubs('Acórdãos — ' + (itens[0].recurso || 'Outros recursos'), itens);
+    return { titulo: '', blocos: [] };
+  });
+}
+
+function renderLiminares(f) {
+  const lim = f.filter(p => ehDecisao(p) && p.julgamento === 'Liminar');
+  const def = lim.filter(p => p.dispositivo === 'Liminar deferida').length;
+  const ind = lim.filter(p => p.dispositivo === 'Liminar indeferida').length;
+  const base = def + ind;
+  document.getElementById('resumoLiminar').innerHTML = [
+    itemResumo('Liminares apreciadas', num(lim.length), 'com dispositivo legível', COR_AZUL),
+    itemResumo('Deferidas', num(def), base ? pct1(def / base * 100) + ' das apreciadas' : '—', COR_VERDE),
+    itemResumo('Indeferidas', num(ind), base ? pct1(ind / base * 100) + ' das apreciadas' : '—', COR_VERMELHO),
+    itemResumo('Taxa de deferimento', base ? pct1(def / base * 100) : '—',
+      'entra bem ou não na vara', corExito(base ? def / base * 100 : null))
+  ].join('');
+}
+
+/* Matriz julgamento × resultado: a leitura que o pedido descreve — sentenças
+   com procedente, improcedente, extinção e acordo, e o mesmo para recurso e
+   liminar, tudo numa tabela só. */
+function renderMatrizJulg(f) {
+  const dec = f.filter(ehDecisao);
+  const julgs = ['Sentença', 'Recurso', 'Liminar', 'Outros atos'];
+  const disps = [...new Set(dec.map(p => p.dispositivo))]
+    .sort((a, b) => dec.filter(p => p.dispositivo === b).length - dec.filter(p => p.dispositivo === a).length);
+  const cel = (j, d) => dec.filter(p => p.julgamento === j && p.dispositivo === d).length;
+  const max = Math.max(1, ...julgs.flatMap(j => disps.map(d => cel(j, d))));
+
+  document.getElementById('matrizJulg').innerHTML = !dec.length
+    ? '<div class="sem-vazio">Nenhuma decisão com dispositivo legível no recorte.</div>'
+    : '<table class="calor"><thead><tr><th>Julgamento</th>' +
+      disps.map(d => '<th>' + esc(d) + '</th>').join('') + '<th>Total</th></tr></thead><tbody>' +
+      julgs.filter(j => dec.some(p => p.julgamento === j)).map(j =>
+        '<tr><td><b>' + esc(j) + '</b></td>' +
+        disps.map(d => {
+          const v = cel(j, d);
+          return '<td class="cel-calor" data-j="' + esc(j) + '" data-d="' + esc(d) + '"' +
+            ' style="background:rgba(59,130,246,' + (0.05 + (v / max) * 0.7).toFixed(3) + ')">' +
+            (v || '') + '</td>';
+        }).join('') +
+        '<td><b>' + num(dec.filter(p => p.julgamento === j).length) + '</b></td></tr>').join('') +
+      '</tbody></table>';
+
+  document.querySelectorAll('#matrizJulg .cel-calor').forEach(c => {
+    c.onclick = () => {
+      const itens = dec.filter(p => p.julgamento === c.dataset.j && p.dispositivo === c.dataset.d);
+      if (itens.length) listaPubs(c.dataset.d + ' — ' + c.dataset.j, itens);
+    };
+  });
+}
+
+function renderProduto(f) {
+  const dec = f.filter(ehDecisao);
+  const grupos = [...agrupar(dec, p => p.produto).entries()]
+    .sort((a, b) => b[1].length - a[1].length);
+
+  const cad = dec.filter(p => p.produtoCadastrado).length;
+  document.getElementById('subProduto').innerHTML =
+    'O produto vem <b>cadastrado</b> na planilha Clientes e Processos — a mesma fonte do painel ' +
+    'Processos Judiciais — em <b>' + num(cad) + '</b> das ' + num(dec.length) + ' decisões. ' +
+    'No que falta cadastro, o painel deduz pelo assunto do CNJ e marca a dedução na ficha; ' +
+    '"Não identificado" não é produto novo, é processo sem par nas duas bases.';
+
+  document.getElementById('corpoProduto').innerHTML = grupos.length ? grupos.map(([nome, itens]) => {
+    const g = placar(itens);
+    const cond = itens.reduce((s, p) => s + (p.condenacao || 0), 0);
+    return '<tr><td><b>' + esc(nome) + '</b></td>' +
+      '<td>' + num(itens.length) + '</td>' +
+      '<td>' + num(g.ganhos) + '</td><td>' + num(g.parciais) + '</td><td>' + num(g.perdas) + '</td>' +
+      '<td><span class="tag-pct ' + classeExito(g.exito) + '">' + pct1(g.exito) + '</span></td>' +
+      '<td class="dir">' + (cond ? moeda(cond) : '—') + '</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Sem decisões no recorte.</td></tr>';
+  if (grupos.length) tabelaClicavel('corpoProduto', grupos.map(g => g[1]), itens => {
+    listaPubs('Decisões — ' + itens[0].produto, itens);
+    return { titulo: '', blocos: [] };
   });
 
-  const atos = topN(f.reduce((m, p) => { m[p.ato] = (m[p.ato] || 0) + 1; return m; }, {}), 9, 'Outros');
-  destruir('ato');
-  graficos.ato = new Chart(document.getElementById('grafAto'), {
+  const top = grupos.slice(0, 8);
+  destruir('produto');
+  graficos.produto = new Chart(document.getElementById('grafProduto'), {
     type: 'bar',
-    data: { labels: atos.map(a => a[0]), datasets: [{ label: 'Publicações', data: atos.map(a => a[1]),
-      backgroundColor: atos.map((_, i) => PALETA[i % PALETA.length]), borderRadius: 3, maxBarThickness: 22 }] },
+    data: { labels: top.map(g => g[0]), datasets: [
+      { label: 'Favorável', stack: 'p', data: top.map(g => placar(g[1]).ganhos), backgroundColor: COR_VERDE },
+      { label: 'Parcial', stack: 'p', data: top.map(g => placar(g[1]).parciais), backgroundColor: COR_AMARELO },
+      { label: 'Desfavorável', stack: 'p', data: top.map(g => placar(g[1]).perdas), backgroundColor: COR_VERMELHO }
+    ]},
     options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      scales: { x: { grid: { color: COR_BORDA } }, y: { grid: { display: false } } },
-      plugins: { legend: { display: false } } }
+      scales: { x: { stacked: true, grid: { color: COR_BORDA } }, y: { stacked: true, grid: { display: false } } },
+      plugins: { legend: { position: 'bottom' } } }
+  });
+
+  const trib = [...agrupar(dec, p => p.tribunal).entries()]
+    .sort((a, b) => b[1].length - a[1].length).slice(0, 10);
+  destruir('resTrib');
+  graficos.resTrib = new Chart(document.getElementById('grafResTribunal'), {
+    type: 'bar',
+    data: { labels: trib.map(g => g[0]), datasets: [
+      { label: 'Favorável', stack: 't', data: trib.map(g => placar(g[1]).ganhos), backgroundColor: COR_VERDE },
+      { label: 'Parcial', stack: 't', data: trib.map(g => placar(g[1]).parciais), backgroundColor: COR_AMARELO },
+      { label: 'Desfavorável', stack: 't', data: trib.map(g => placar(g[1]).perdas), backgroundColor: COR_VERMELHO }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: COR_BORDA } } },
+      plugins: { legend: { position: 'bottom' } } }
+  });
+}
+
+/* Contra quem se ganha e contra quem se perde. A mesma tese tem taxa diferente
+   conforme o réu — é o recorte que diz onde insistir e onde negociar. */
+function renderContrapartes(f) {
+  const el = document.getElementById('corpoReus');
+  if (!el) return;
+  const dec = f.filter(p => ehDecisao(p) && p.reu);
+  const grupos = [...agrupar(dec, p => String(p.reu).slice(0, 60)).entries()]
+    .filter(g => g[1].length >= 3)
+    .sort((a, b) => b[1].length - a[1].length).slice(0, 25);
+  el.innerHTML = grupos.length ? grupos.map(([nome, itens]) => {
+    const g = placar(itens);
+    const cond = itens.reduce((s, p) => s + (p.condenacao || 0), 0);
+    return '<tr><td style="white-space:normal;max-width:300px"><b>' + esc(nome) + '</b></td>' +
+      '<td>' + num(itens.length) + '</td>' +
+      '<td>' + num(g.ganhos) + '</td><td>' + num(g.parciais) + '</td><td>' + num(g.perdas) + '</td>' +
+      '<td><span class="tag-pct ' + classeExito(g.exito) + '">' + pct1(g.exito) + '</span></td>' +
+      '<td class="dir">' + (cond ? moeda(cond) : '—') + '</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhuma contraparte com 3 ou mais decisões no recorte.</td></tr>';
+  document.getElementById('subReus').innerHTML =
+    'Contrapartes com <b>3 ou mais</b> decisões no recorte. Abaixo disso a taxa não diz nada — ' +
+    'duas decisões viram 0% ou 100% por acaso.';
+  if (grupos.length) tabelaClicavel('corpoReus', grupos.map(g => g[1]), itens => {
+    listaPubs('Decisões contra ' + String(itens[0].reu).slice(0, 60), itens);
+    return { titulo: '', blocos: [] };
+  });
+}
+
+/* Filtro local da tabela de decisões. O período fica no topo porque define a
+   própria chamada à API; aqui a pergunta é mais estreita. */
+const FILTRO_DEC = { busca: '', comValor: false, soDivergentes: false };
+
+function montarFiltroDec() {
+  const el = document.getElementById('filtroDec');
+  if (!el || el.dataset.pronto) return;
+  el.dataset.pronto = '1';
+  const redesenhar = () => renderDecisoes(filtrar(BASE.pubs));
+  document.getElementById('decBusca').addEventListener('input', ev => {
+    FILTRO_DEC.busca = ev.target.value; redesenhar();
+  });
+  document.getElementById('decComValor').addEventListener('click', ev => {
+    FILTRO_DEC.comValor = !FILTRO_DEC.comValor;
+    ev.target.classList.toggle('ativo', FILTRO_DEC.comValor); redesenhar();
+  });
+  document.getElementById('decDiverg').addEventListener('click', ev => {
+    FILTRO_DEC.soDivergentes = !FILTRO_DEC.soDivergentes;
+    ev.target.classList.toggle('ativo', FILTRO_DEC.soDivergentes); redesenhar();
+  });
+  document.getElementById('decLimpar').addEventListener('click', () => {
+    FILTRO_DEC.busca = ''; FILTRO_DEC.comValor = false; FILTRO_DEC.soDivergentes = false;
+    document.getElementById('decBusca').value = '';
+    document.getElementById('decComValor').classList.remove('ativo');
+    document.getElementById('decDiverg').classList.remove('ativo');
+    redesenhar();
+  });
+  document.getElementById('decCSV').addEventListener('click', () => baixarDec('csv'));
+  document.getElementById('decXLSX').addEventListener('click', () => baixarDec('xlsx'));
+}
+
+function decisoesFiltradas(f) {
+  const q = chaveBusca(FILTRO_DEC.busca || '');
+  return f.filter(ehDecisao).filter(p => {
+    if (FILTRO_DEC.comValor && !(p.condenacao > 0)) return false;
+    if (FILTRO_DEC.soDivergentes && !divergencia(p)) return false;
+    if (q && !casaBusca(FILTRO_DEC.busca, p.processo, p.cliente, p.autor, p.reu,
+                        p.produto, p.tribunal, p.orgao, p.dispositivo, p.texto)) return false;
+    return true;
+  }).sort((a, b) => (b.disp ? b.disp.getTime() : 0) - (a.disp ? a.disp.getTime() : 0));
+}
+
+/* Exporta a tabela como está na tela, com o valor como número — planilha
+   precisa somar, e "R$ 1.234,56" como texto não soma. */
+function baixarDec(formato) {
+  const dec = decisoesFiltradas(filtrar(BASE.pubs));
+  if (!dec.length) return;
+  const cab = ['Disponibilizacao', 'Publicacao', 'Inicio do prazo', 'Processo', 'Cliente',
+               'Autor', 'Reu', 'Produto', 'Tribunal', 'Orgao julgador', 'Tipo de ato',
+               'Julgamento', 'Especie de recurso', 'Resultado', 'Favoravel/Desfavoravel',
+               'Condenacao identificada', 'Transito mencionado', 'Confianca',
+               'Registro - sentenca', 'Registro - recurso', 'Situacao do alvara',
+               'Valor da causa', 'Fase processual', 'Classe', 'ID DJEN', 'Link da certidao', 'Texto'];
+  const linhas = dec.map(p => [
+    dtBR(p.disp), dtBR(p.pub), dtBR(p.inicioPrazo), p.processo, p.cliente,
+    p.autor || '', p.reu || '', p.produto, p.tribunal, p.orgao, p.ato,
+    p.julgamento, p.recurso || '', p.dispositivo, p.resultado,
+    p.condenacao || '', p.transitou ? 'sim' : 'nao', p.confianca,
+    p.resSentenca || '', p.resRecurso || '', p.alvara || '',
+    p.valorCausa || '', p.faseProc || '', p.classe || '', p.id,
+    p.hash ? API_DJEN + '/' + p.hash + '/certidao' : '',
+    String(p.texto || '').slice(0, 3000)
+  ]);
+  const m = [cab].concat(linhas);
+  const nome = 'djen-decisoes-' + BASE.janela.ini + '-a-' + BASE.janela.fim;
+  if (formato === 'xlsx' && typeof XLSX !== 'undefined') {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(m), 'Decisões');
+    XLSX.writeFile(wb, nome + '.xlsx');
+    return;
+  }
+  const csv = m.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = nome + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function renderDecisoes(f) {
+  montarFiltroDec();
+  const todas = f.filter(ehDecisao);
+  const dec = decisoesFiltradas(f);
+  const br = x => x.split('-').reverse().join('/');
+  document.getElementById('subDecisoes').innerHTML =
+    '<b>' + num(dec.length) + '</b> decisões com dispositivo legível · período de <b>' +
+    br(BASE.janela.ini) + '</b> a <b>' + br(BASE.janela.fim) + '</b>' +
+    (dec.length !== todas.length ? ' · de ' + num(todas.length) + ' no recorte do topo' : '') +
+    '. Clique numa linha para abrir a ficha com o texto integral e a certidão.';
+  const vis = dec.slice(0, 300);
+  document.getElementById('corpoDecisoes').innerHTML = vis.length ? vis.map(p => {
+    const div = divergencia(p);
+    return '<tr><td>' + dtBR(p.disp) + '<br><span style="color:var(--texto-muted);font-size:.72rem">' +
+      esc(p.tribunal) + '</span></td>' +
+      '<td><b>' + esc(p.processo || '—') + '</b></td>' +
+      '<td style="white-space:normal;max-width:180px">' + esc(p.cliente || '—') + '</td>' +
+      '<td>' + esc(p.produto || '—') + '</td>' +
+      '<td>' + esc(p.julgamento) + (p.recurso ? '<br><span style="color:var(--texto-muted);font-size:.72rem">' +
+        esc(p.recurso) + '</span>' : '') + '</td>' +
+      '<td><span class="tag-pct ' + (p.resultado === 'Favorável' ? 'verde' : p.resultado === 'Desfavorável'
+        ? 'vermelho' : p.resultado === 'Parcial' ? 'amarelo' : 'neutro') + '">' + esc(p.dispositivo) + '</span></td>' +
+      '<td class="dir">' + (p.condenacao ? moeda(p.condenacao) : '—') + '</td>' +
+      '<td style="white-space:normal;max-width:170px">' + esc(p.resSentenca || p.resRecurso || '—') +
+        (div ? ' <span class="tag-pct amarelo">atrás do diário</span>' : '') + '</td>' +
+      '<td><span class="tag-pct ' + (p.confianca >= 80 ? 'verde' : p.confianca >= METAS.confiancaMinima
+        ? 'amarelo' : 'vermelho') + '">' + p.confianca + '%</span></td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhuma decisão no recorte.</td></tr>';
+  document.getElementById('notaDecisoes').innerHTML = dec.length > vis.length
+    ? 'Exibindo as ' + vis.length + ' mais recentes de ' + num(dec.length) +
+      '. <b>A exportação leva todas as ' + num(dec.length) + '</b>, não só as exibidas.'
+    : '';
+  if (vis.length) tabelaClicavel('corpoDecisoes', vis, fichaPub);
+}
+
+/* ================================================================ EXECUÇÃO */
+/* Decisões favoráveis com valor. Serve para listar; NÃO serve para somar —
+   o mesmo processo sai no diário várias vezes com a mesma condenação. */
+function paraExecutar(f) {
+  return f.filter(p => ehDecisao(p) && p.condenacao > 0 &&
+                       (p.resultado === 'Favorável' || p.resultado === 'Parcial'))
+          .sort((a, b) => b.condenacao - a.condenacao);
+}
+
+/* Uma linha por processo, com a maior condenação encontrada nele. É esta que
+   pode ser somada: a carteira a executar é o conjunto de processos, não o de
+   publicações, e um processo publicado cinco vezes continua sendo um. */
+function execucaoPorProcesso(f) {
+  const m = new Map();
+  for (const p of paraExecutar(f)) {
+    const k = p.processoDigitos || p.processo || p.id;
+    const at = m.get(k);
+    if (!at) { m.set(k, { pub: p, vezes: 1, maior: p.condenacao }); continue; }
+    at.vezes++;
+    if (p.condenacao > at.maior) { at.maior = p.condenacao; at.pub = p; }
+  }
+  return [...m.values()].sort((a, b) => b.maior - a.maior);
+}
+
+/* Estágio de recebimento. Ganhar e receber são coisas diferentes, e a
+   distância entre as duas é onde o dinheiro fica parado. A fonte é a coluna
+   Situação do Alvará da planilha do DataJud. */
+const ESTAGIOS = [
+  ['Recebido',            /creditado/i],
+  ['Em compensação',      /aguardando compensa|solicitado/i],
+  ['A solicitar',         /ainda n[ãa]o solicitado/i],
+  ['Aguardando — recursal',    /fase recursal/i],
+  ['Aguardando — conhecimento', /fase de conhecimento/i],
+  ['Sem valores a receber', /n[ãa]o h[áa] valores/i]
+];
+function estagioDe(alvara) {
+  const a = String(alvara || '');
+  if (!a.trim()) return 'Sem registro';
+  for (const [nome, re] of ESTAGIOS) if (re.test(a)) return nome;
+  return 'Sem registro';
+}
+const COR_ESTAGIO = {
+  'Recebido': 'verde', 'Em compensação': 'amarelo', 'A solicitar': 'vermelho',
+  'Aguardando — recursal': 'neutro', 'Aguardando — conhecimento': 'neutro',
+  'Sem valores a receber': 'neutro', 'Sem registro': 'neutro'
+};
+
+/* Filtro local do painel de valores: o recorte do topo é o do escritório
+   inteiro, e aqui a pergunta costuma ser mais estreita — "acima de tanto",
+   "só apelação", "só o que ainda não foi pedido". */
+const FILTRO_EXEC = { busca: '', minimo: 0, soTransito: false,
+                      julg: new Set(), estagios: new Set() };
+
+/* Rótulo de julgamento usado no filtro deste painel: apelação e agravo são
+   perguntas separadas, "recurso" como bloco único não serve aqui. */
+function faixaJulg(p) {
+  if (p.julgamento === 'Sentença') return 'Sentença';
+  if (p.julgamento === 'Liminar') return 'Liminar';
+  if (p.julgamento === 'Recurso') {
+    if (p.recurso === 'Apelação') return 'Apelação';
+    if (p.recurso && /agravo/i.test(p.recurso)) return 'Agravo';
+    return 'Outros recursos';
+  }
+  return 'Outros atos';
+}
+
+function aplicarFiltroExec(linhas) {
+  const q = chaveBusca(FILTRO_EXEC.busca || '');
+  return linhas.filter(l => {
+    const p = l.pub;
+    if (FILTRO_EXEC.minimo && l.maior < FILTRO_EXEC.minimo) return false;
+    if (FILTRO_EXEC.soTransito && !p.transitou) return false;
+    if (FILTRO_EXEC.julg.size && !FILTRO_EXEC.julg.has(faixaJulg(p))) return false;
+    if (FILTRO_EXEC.estagios.size && !FILTRO_EXEC.estagios.has(estagioDe(p.alvara))) return false;
+    if (q && !casaBusca(FILTRO_EXEC.busca, p.processo, p.cliente, p.autor, p.reu,
+                        p.produto, p.tribunal, p.dispositivo)) return false;
+    return true;
+  });
+}
+
+function renderExecucao(d, f) {
+  const todos = execucaoPorProcesso(f);
+  montarFiltroExec(todos);
+  renderEstagios(todos);
+  const fila = aplicarFiltroExec(todos);
+  const soma = fila.reduce((s, l) => s + l.maior, 0);
+  const transitados = fila.filter(l => l.pub.transitou);
+  const somaTrans = transitados.reduce((s, l) => s + l.maior, 0);
+  const processos = fila.length;
+  const repetidos = fila.filter(l => l.vezes > 1).length;
+
+  document.getElementById('kpisExecucao').innerHTML = [
+    cartaoKPI('Condenação identificada', soma ? moeda(soma) : '—', soma ? 'verde' : 'neutro',
+      '<span>em <b>' + num(processos) + '</b> processos distintos</span>'),
+    cartaoKPI('Com trânsito mencionado', somaTrans ? moeda(somaTrans) : '—', somaTrans ? 'verde' : 'neutro',
+      '<span><b>' + num(transitados.length) + '</b> processos — executáveis já</span>'),
+    cartaoKPI('Ainda recorrível', soma - somaTrans ? moeda(soma - somaTrans) : '—', 'amarelo',
+      '<span>sem menção de trânsito no texto</span>'),
+    cartaoKPI('Maior condenação', fila.length ? moeda(fila[0].maior) : '—', 'roxo',
+      '<span>' + (fila.length ? esc(fila[0].pub.cliente || fila[0].pub.processo) : '—') + '</span>'),
+    cartaoKPI('Condenação média', fila.length ? moeda(soma / fila.length) : '—', 'azul',
+      '<span>por processo com valor</span>'),
+    cartaoKPI('Decisões favoráveis sem valor',
+      num(f.filter(p => ehDecisao(p) && !p.condenacao &&
+        (p.resultado === 'Favorável' || p.resultado === 'Parcial')).length), 'amarelo',
+      '<span>ganho sem número no texto — conferir nos autos</span>')
+  ].join('');
+
+  ligarKPIsEm('kpisExecucao', {
+    0: () => listaPubs('Processos com Condenação Identificada', fila.map(l => l.pub)),
+    1: () => listaPubs('Condenações com Trânsito Mencionado', transitados.map(l => l.pub),
+        'O texto menciona trânsito em julgado. Confirme nos autos antes de executar.', 'alerta'),
+    2: () => listaPubs('Condenações Ainda Recorríveis',
+        fila.filter(l => !l.pub.transitou).map(l => l.pub)),
+    5: () => listaPubs('Decisões Favoráveis sem Valor no Texto',
+        f.filter(p => ehDecisao(p) && !p.condenacao && (p.resultado === 'Favorável' || p.resultado === 'Parcial')),
+        'Ganhou, mas o texto não traz valor. Pode ser obrigação de fazer, ou o valor está só no corpo da sentença.', 'alerta')
+  });
+
+  const vis = fila.slice(0, 200);
+  document.getElementById('corpoExecucao').innerHTML = vis.length ? vis.map(l => {
+    const p = l.pub;
+    return '<tr><td>' + dtBR(p.disp) +
+      (l.vezes > 1 ? '<br><span style="color:var(--texto-muted);font-size:.7rem">' + l.vezes +
+        ' publicações</span>' : '') + '</td>' +
+    '<td><b>' + esc(p.processo || '—') + '</b><br><span style="color:var(--texto-muted);font-size:.72rem">' +
+      esc(p.tribunal) + '</span></td>' +
+    '<td style="white-space:normal;max-width:170px">' + esc(p.cliente || '—') + '</td>' +
+    '<td>' + esc(p.produto || '—') + '</td>' +
+    '<td><span class="tag-pct ' + (p.resultado === 'Favorável' ? 'verde' : 'amarelo') + '">' +
+      esc(p.dispositivo) + '</span></td>' +
+    '<td class="dir valor-forte">' + moeda(l.maior) + '</td>' +
+    '<td>' + (p.transitou ? '<span class="tag-pct verde">mencionado</span>'
+                          : '<span style="color:var(--texto-muted)">—</span>') + '</td>' +
+    '<td><span class="tag-pct ' + COR_ESTAGIO[estagioDe(p.alvara)] + '">' +
+      esc(estagioDe(p.alvara)) + '</span></td>' +
+    '<td style="white-space:normal;max-width:300px;font-size:.74rem;color:var(--texto-muted)">…' +
+      esc(trechoCondenacao(p)) + '…</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhuma condenação identificada neste recorte.</td></tr>';
+  document.getElementById('notaExecucao').innerHTML =
+    '<b>Uma linha por processo</b>, com a maior condenação encontrada nele — o mesmo processo sai no diário ' +
+    'várias vezes com o mesmo valor, e somar publicação a publicação multiplicaria a carteira' +
+    (repetidos ? ' (' + num(repetidos) + ' processos aqui têm mais de uma publicação)' : '') + '. ' +
+    'Valores de <b>bloqueio, penhora, custas e honorários ficam de fora</b>: entram em outra natureza. ' +
+    (todos.length > fila.length ? '<b>' + num(todos.length - fila.length) + '</b> processos ocultos pelo filtro deste painel. ' : '') +
+    (fila.length > vis.length ? 'Exibindo os ' + vis.length + ' maiores de ' + num(fila.length) + '. ' : '') +
+    '<b>Validação nos autos é obrigatória antes de executar.</b>';
+  if (vis.length) tabelaClicavel('corpoExecucao', vis.map(l => l.pub), fichaPub);
+
+  /* composição por natureza */
+  const porNat = {};
+  for (const p of f) for (const v of (p.valores || [])) porNat[v.tipo] = (porNat[v.tipo] || 0) + v.valor;
+  const nat = Object.entries(porNat).sort((a, b) => b[1] - a[1]);
+  destruir('natureza');
+  graficos.natureza = new Chart(document.getElementById('grafNatureza'), {
+    type: 'doughnut',
+    data: { labels: nat.map(x => x[0]),
+      datasets: [{ data: nat.map(x => x[1]), backgroundColor: PALETA, borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '55%',
+      plugins: { legend: { position: 'right' },
+        tooltip: { callbacks: { label: c => c.label + ': ' + moeda(c.parsed) } },
+        rotuloPct: { ativo: false } } }
+  });
+
+  const porProd = {};
+  for (const l of fila) porProd[l.pub.produto] = (porProd[l.pub.produto] || 0) + l.maior;
+  const pp = Object.entries(porProd).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  destruir('condProd');
+  graficos.condProd = new Chart(document.getElementById('grafCondProduto'), {
+    type: 'bar',
+    data: { labels: pp.map(x => x[0]),
+      datasets: [{ label: 'Condenação', data: pp.map(x => x[1]),
+        backgroundColor: hexA(COR_VERDE, .7), borderRadius: 3 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, rotuloPct: { ativo: false },
+        tooltip: { callbacks: { label: c => moeda(c.parsed.x) } } },
+      scales: { x: { grid: { color: COR_BORDA } }, y: { grid: { display: false } } } }
+  });
+
+  /* alvará — vem do registro, não do diário */
+  const alv = {};
+  for (const [, proc] of d.processos) {
+    const a = proc.alvara || 'sem registro';
+    alv[a] = (alv[a] || 0) + 1;
+  }
+  const ordem = ['Creditado', 'Solicitado e Aguardando Compensação', 'Ainda não Solicitado (Aguardando Prazo)',
+                 'Processo em Fase Recursal', 'Processo em Fase de Conhecimento', 'Não há Valores a Receber'];
+  const cores = [COR_VERDE, COR_CIANO, COR_AMARELO, COR_ROXO, COR_AZUL, COR_MUTED];
+  document.getElementById('resumoAlvara').innerHTML = ordem.map((k, i) =>
+    itemResumo(k, num(alv[k] || 0),
+      k === 'Creditado' ? 'dinheiro que entrou'
+      : k === 'Ainda não Solicitado (Aguardando Prazo)' ? 'ganho parado — providência direta'
+      : k === 'Solicitado e Aguardando Compensação' ? 'a caminho'
+      : 'situação registrada na planilha', cores[i])).join('');
+}
+
+/* Quanto já entrou, quanto está a caminho e quanto nem foi pedido. É a
+   leitura que separa "ganhamos" de "recebemos". */
+function renderEstagios(todos) {
+  const el = document.getElementById('resumoEstagio');
+  if (!el) return;
+  const nomes = ['Recebido', 'Em compensação', 'A solicitar',
+                 'Aguardando — recursal', 'Aguardando — conhecimento', 'Sem registro'];
+  const cores = [COR_VERDE, COR_AMARELO, COR_VERMELHO, COR_ROXO, COR_AZUL, COR_MUTED];
+  el.innerHTML = nomes.map((n, i) => {
+    const g = todos.filter(l => estagioDe(l.pub.alvara) === n);
+    const soma = g.reduce((s, l) => s + l.maior, 0);
+    return itemResumo(n, soma ? moeda(soma) : '—',
+      num(g.length) + ' processo(s)' +
+      (n === 'A solicitar' ? ' — ganho parado, providência direta' :
+       n === 'Sem registro' ? ' — sem acompanhamento de alvará' : ''), cores[i]);
+  }).join('');
+}
+
+function montarFiltroExec(todos) {
+  const el = document.getElementById('filtroExec');
+  if (!el || el.dataset.pronto) return;
+  el.dataset.pronto = '1';
+
+  const redesenhar = () => renderExecucao(BASE, filtrar(BASE.pubs));
+  const chipsExec = (id, valores, conjunto) => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    c.innerHTML = valores.map(v =>
+      '<button type="button" class="chip' + (conjunto.has(v) ? ' ativo' : '') +
+      '" data-v="' + esc(v) + '">' + esc(v) + '</button>').join('');
+    c.onclick = ev => {
+      const b = ev.target.closest('.chip'); if (!b) return;
+      const v = b.dataset.v;
+      if (conjunto.has(v)) conjunto.delete(v); else conjunto.add(v);
+      b.classList.toggle('ativo', conjunto.has(v));
+      redesenhar();
+    };
+  };
+  chipsExec('execJulg', ['Sentença', 'Apelação', 'Agravo', 'Outros recursos', 'Liminar'], FILTRO_EXEC.julg);
+  chipsExec('execEstagio', ['Recebido', 'Em compensação', 'A solicitar',
+    'Aguardando — recursal', 'Aguardando — conhecimento', 'Sem registro'], FILTRO_EXEC.estagios);
+
+  document.getElementById('execCSV').addEventListener('click', () => baixarExec('csv'));
+  document.getElementById('execXLSX').addEventListener('click', () => baixarExec('xlsx'));
+  document.getElementById('execBusca').addEventListener('input', ev => {
+    FILTRO_EXEC.busca = ev.target.value; renderExecucao(BASE, filtrar(BASE.pubs));
+  });
+  document.getElementById('execMinimo').addEventListener('change', ev => {
+    FILTRO_EXEC.minimo = Number(ev.target.value) || 0; renderExecucao(BASE, filtrar(BASE.pubs));
+  });
+  document.getElementById('execTransito').addEventListener('click', ev => {
+    FILTRO_EXEC.soTransito = !FILTRO_EXEC.soTransito;
+    ev.target.classList.toggle('ativo', FILTRO_EXEC.soTransito);
+    renderExecucao(BASE, filtrar(BASE.pubs));
+  });
+  document.getElementById('execLimpar').addEventListener('click', () => {
+    FILTRO_EXEC.busca = ''; FILTRO_EXEC.minimo = 0; FILTRO_EXEC.soTransito = false;
+    FILTRO_EXEC.julg.clear(); FILTRO_EXEC.estagios.clear();
+    document.getElementById('execBusca').value = '';
+    document.getElementById('execMinimo').value = '0';
+    document.getElementById('execTransito').classList.remove('ativo');
+    document.querySelectorAll('#execJulg .chip, #execEstagio .chip').forEach(c => c.classList.remove('ativo'));
+    renderExecucao(BASE, filtrar(BASE.pubs));
+  });
+}
+
+/* Exporta exatamente o que está na tela, uma linha por processo. O valor sai
+   como número, não como texto formatado: planilha precisa somar. */
+function baixarExec(formato) {
+  const linhas = aplicarFiltroExec(execucaoPorProcesso(filtrar(BASE.pubs)));
+  if (!linhas.length) return;
+  const cab = ['Data da decisão', 'Processo', 'Cliente', 'Autor', 'Réu', 'Produto',
+               'Tribunal', 'Órgão julgador', 'Julgamento', 'Espécie de recurso', 'Resultado',
+               'Condenação identificada', 'Trânsito mencionado', 'Estágio de recebimento',
+               'Situação do alvará (planilha)', 'Registro — sentença', 'Registro — recurso',
+               'Valor da causa', 'Publicações do processo no período', 'Confiança da leitura',
+               'Trecho de onde saiu o valor', 'Link da certidão'];
+  const corpo = linhas.map(l => {
+    const p = l.pub;
+    return [dtBR(p.disp), p.processo, p.cliente, p.autor || '', p.reu || '', p.produto,
+            p.tribunal, p.orgao, p.julgamento, p.recurso || '', p.dispositivo,
+            l.maior, p.transitou ? 'sim' : 'não', estagioDe(p.alvara),
+            p.alvara || '', p.resSentenca || '', p.resRecurso || '',
+            p.valorCausa || '', l.vezes, p.confianca,
+            trechoCondenacao(p), p.hash ? API_DJEN + '/' + p.hash + '/certidao' : ''];
+  });
+  const m = [cab].concat(corpo);
+  const nome = 'djen-ganhos-executaveis-' + new Date().toISOString().slice(0, 10);
+  if (formato === 'xlsx' && typeof XLSX !== 'undefined') {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(m), 'Ganhos');
+    XLSX.writeFile(wb, nome + '.xlsx');
+    return;
+  }
+  const csv = m.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = nome + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function trechoCondenacao(p) {
+  const v = (p.valores || []).find(x => x.tipo === 'Condenação');
+  return v ? v.trecho.slice(0, 220) : '';
+}
+
+/* ================================================================ CARTEIRA */
+function renderCarteira(d) {
+  const procs = [...d.processos.values()];
+  const cont = (campo, val) => procs.filter(p => String(p[campo] || '') === val).length;
+  const merito = cont('resSentenca', 'Procedência') + cont('resSentenca', 'Improcedência');
+
+  document.getElementById('resumoCarteira').innerHTML = [
+    itemResumo('Processos na base', num(procs.length), 'carteira inteira do DataJud', COR_AZUL),
+    itemResumo('Procedência', num(cont('resSentenca', 'Procedência')),
+      merito ? pct1(cont('resSentenca', 'Procedência') / merito * 100) + ' do mérito sentenciado' : '—', COR_VERDE),
+    itemResumo('Improcedência', num(cont('resSentenca', 'Improcedência')),
+      merito ? pct1(cont('resSentenca', 'Improcedência') / merito * 100) + ' do mérito sentenciado' : '—', COR_VERMELHO),
+    itemResumo('Acordo homologado', num(cont('resSentenca', 'Acordo Homologado')), 'encerrado com receita', COR_CIANO),
+    itemResumo('Extinção do processo', num(cont('resSentenca', 'Extinção do Processo')), 'sem mérito', COR_MUTED),
+    itemResumo('Não sentenciado', num(cont('resSentenca', 'Não Sentenciado')), 'ainda em curso', COR_AMARELO)
+  ].join('');
+
+  const pizza = (id, chave, ordem, cores) => {
+    const c = {};
+    for (const p of procs) { const k = String(p[chave] || 'sem registro'); c[k] = (c[k] || 0) + 1; }
+    const lab = ordem.filter(k => c[k]);
+    for (const k of Object.keys(c)) if (lab.indexOf(k) < 0) lab.push(k);
+    destruir(id);
+    graficos[id] = new Chart(document.getElementById(id === 'cartSent' ? 'grafCarteiraSent' : 'grafCarteiraRec'), {
+      type: 'doughnut',
+      data: { labels: lab, datasets: [{ data: lab.map(k => c[k]), backgroundColor: cores.concat(PALETA), borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '55%',
+        plugins: { legend: { position: 'right' }, rotuloPct: { ativo: false } } }
+    });
+  };
+  pizza('cartSent', 'resSentenca',
+    ['Procedência', 'Improcedência', 'Acordo Homologado', 'Extinção do Processo', 'Não Sentenciado'],
+    [COR_VERDE, COR_VERMELHO, COR_CIANO, COR_MUTED, COR_AMARELO]);
+  pizza('cartRec', 'resRecurso',
+    ['Provido', 'Não Provido', 'Aguardando Julgamento', 'Não Houve Recurso'],
+    [COR_VERDE, COR_VERMELHO, COR_AMARELO, COR_MUTED]);
+}
+
+function renderDivergencia(f) {
+  const div = f.filter(p => divergencia(p))
+    .sort((a, b) => (b.disp ? b.disp.getTime() : 0) - (a.disp ? a.disp.getTime() : 0));
+  document.getElementById('subDivergencia').innerHTML = div.length
+    ? '<b>' + num(div.length) + '</b> decisões saíram no diário e a planilha ainda não registrou. ' +
+      'Não é erro de leitura: é registro atrasado — e processo ganho sem registro é processo que não vira execução.'
+    : 'Nenhuma divergência no recorte: tudo que saiu no diário já consta na planilha.';
+  const vis = div.slice(0, 150);
+  document.getElementById('corpoDivergencia').innerHTML = vis.length ? vis.map(p =>
+    '<tr><td>' + dtBR(p.disp) + '</td>' +
+    '<td><b>' + esc(p.processo || '—') + '</b></td>' +
+    '<td style="white-space:normal;max-width:180px">' + esc(p.cliente || '—') + '</td>' +
+    '<td><span class="tag-pct ' + (p.resultado === 'Favorável' ? 'verde' : p.resultado === 'Desfavorável'
+      ? 'vermelho' : 'amarelo') + '">' + esc(p.dispositivo) + '</span></td>' +
+    '<td>' + esc(p.resSentenca || 'sem registro') + '</td>' +
+    '<td><span class="tag-pct ' + (p.confianca >= 80 ? 'verde' : 'amarelo') + '">' + p.confianca + '%</span></td></tr>'
+  ).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nada divergente.</td></tr>';
+  if (vis.length) tabelaClicavel('corpoDivergencia', vis, fichaPub);
+}
+
+function renderTendencia(f) {
+  const porDia = {};
+  for (const p of f) if (p.disp) porDia[p.disp.getTime()] = (porDia[p.disp.getTime()] || 0) + 1;
+  const dias = Object.keys(porDia).map(Number).sort((a, b) => a - b);
+  const vals = dias.map(x => porDia[x]);
+  const media = vals.map((_, i) => {
+    const jan = vals.slice(Math.max(0, i - 6), i + 1);
+    return jan.reduce((s, x) => s + x, 0) / jan.length;
+  });
+  destruir('tendencia');
+  graficos.tendencia = new Chart(document.getElementById('grafTendencia'), {
+    data: {
+      labels: dias.map(x => new Date(x).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })),
+      datasets: [
+        { type: 'bar', label: 'Publicações', data: vals, backgroundColor: hexA(COR_AZUL, .55), borderRadius: 2 },
+        { type: 'line', label: 'Média de 7 dias', data: media, borderColor: COR_AMARELO,
+          backgroundColor: hexA(COR_AMARELO, .1), tension: .3, pointRadius: 0, borderWidth: 2 }
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { rotuloPct: { ativo: false } },
+      scales: { x: { grid: { display: false } }, y: { grid: { color: COR_BORDA } } } }
   });
 }
 
@@ -2045,7 +3105,6 @@ function renderMapaCalor(f) {
   const atos = [...new Set(f.map(p => p.ato))]
     .map(a => [a, f.filter(p => p.ato === a).length])
     .sort((x, y) => y[1] - x[1]).slice(0, 8).map(x => x[0]);
-
   const val = (t, a) => f.filter(p => p.tribunal === t && p.ato === a).length;
   const max = Math.max(1, ...tribs.flatMap(t => atos.map(a => val(t, a))));
 
@@ -2055,13 +3114,12 @@ function renderMapaCalor(f) {
     tribs.map(t => '<tr><td><b>' + esc(t) + '</b></td>' +
       atos.map(a => {
         const v = val(t, a);
-        const i = v / max;
         return '<td class="cel-calor" data-t="' + esc(t) + '" data-a="' + esc(a) + '"' +
-          ' style="background:rgba(59,130,246,' + (0.06 + i * 0.72).toFixed(3) + ')">' +
+          ' style="background:rgba(59,130,246,' + (0.06 + (v / max) * 0.72).toFixed(3) + ')">' +
           (v || '') + '</td>';
       }).join('') + '</tr>').join('') + '</tbody></table>';
 
-  document.querySelectorAll('.cel-calor').forEach(c => {
+  document.querySelectorAll('#mapaCalor .cel-calor').forEach(c => {
     c.onclick = () => {
       const itens = f.filter(p => p.tribunal === c.dataset.t && p.ato === c.dataset.a);
       if (itens.length) listaPubs(c.dataset.a + ' — ' + c.dataset.t, itens);
@@ -2069,51 +3127,40 @@ function renderMapaCalor(f) {
   });
 }
 
-function renderTendencia(f) {
-  const porDia = {};
-  for (const p of f) if (p.disp) {
-    const k = p.disp.getTime();
-    porDia[k] = (porDia[k] || 0) + 1;
-  }
-  const dias = Object.keys(porDia).map(Number).sort((a, b) => a - b);
-  const vals = dias.map(d => porDia[d]);
-  const media = vals.map((_, i) => {
-    const jan = vals.slice(Math.max(0, i - 6), i + 1);
-    return jan.reduce((s, x) => s + x, 0) / jan.length;
-  });
-  destruir('tendencia');
-  graficos.tendencia = new Chart(document.getElementById('grafTendencia'), {
-    data: {
-      labels: dias.map(d => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })),
-      datasets: [
-        { type: 'bar', label: 'Publicações', data: vals, backgroundColor: hexA(COR_AZUL, .55), borderRadius: 2 },
-        { type: 'line', label: 'Média de 7 dias', data: media, borderColor: COR_AMARELO,
-          backgroundColor: hexA(COR_AMARELO, .1), tension: .3, pointRadius: 0, borderWidth: 2 }
-      ]
-    },
-    options: { responsive: true, maintainAspectRatio: false,
-      scales: { x: { grid: { display: false } }, y: { grid: { color: COR_BORDA } } } }
+/* Só prazos EM CURSO. O controle oficial é o AdvBox; prazo vencido aqui seria
+   alarme falso sobre um sistema que o painel não enxerga. */
+function renderSemaforo(f) {
+  const emCurso = f.filter(p => p.exigePrazo && p.fatal && !p.cancelada && p.fatal >= HOJE);
+  const faixa = (rot, de, ate) => {
+    const itens = emCurso.filter(p => {
+      const d = Math.round((p.fatal - HOJE) / 86400000);
+      return d >= de && d <= ate;
+    }).sort((a, b) => a.fatal - b.fatal);
+    const vis = itens.slice(0, 10);
+    return '<div class="sem-col"><div class="sem-topo"><span class="sem-rot">' + rot +
+      '</span><span class="sem-qtd">' + itens.length + '</span></div>' +
+      (vis.length ? vis.map(p =>
+        '<div class="sem-card" data-id="' + esc(p.id) + '">' +
+        '<div class="sem-proc">' + esc(p.processo || '—') + '</div>' +
+        '<div class="sem-cli">' + esc(p.cliente || (p.orfa ? 'sem vínculo na base' : '—')) + '</div>' +
+        '<div class="sem-ato">' + esc(p.ato) + ' · ' + p.prazoDias + ' dias ' + p.contagem + '</div>' +
+        '<div class="sem-conf' + (p.confianca < METAS.confiancaMinima ? ' baixa' : '') + '">confiança ' +
+          p.confianca + '%</div></div>').join('') +
+        (itens.length > vis.length ? '<div class="sem-vazio">+ ' + (itens.length - vis.length) + ' não exibidos</div>' : '')
+        : '<div class="sem-vazio">nada nesta faixa</div>') + '</div>';
+  };
+  document.getElementById('semaforo').innerHTML =
+    faixa('Hoje (D-0)', 0, 0) + faixa('Amanhã (D-1)', 1, 1) +
+    faixa('D-2 e D-3', 2, 3) + faixa('D+4 a D+10', 4, 10) + faixa('Além de D+10', 11, 99999);
+
+  document.querySelectorAll('.sem-card').forEach(c => {
+    c.onclick = () => {
+      const p = f.find(x => x.id === c.dataset.id);
+      if (p) abrirDetalhe(fichaPub(p));
+    };
   });
 }
 
-function renderPorOab(d, f) {
-  const dados = OABS.filter(o => FILTRO.oabs.has(o.chave)).map(o => ({
-    rotulo: o.rotulo,
-    total: f.filter(p => p.oabs.indexOf(o.chave) >= 0).length
-  }));
-  destruir('oab');
-  graficos.oab = new Chart(document.getElementById('grafOab'), {
-    type: 'doughnut',
-    data: { labels: dados.map(x => x.rotulo),
-      datasets: [{ data: dados.map(x => x.total),
-        backgroundColor: [COR_AZUL, COR_ROXO, COR_CIANO], borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '58%',
-      plugins: { legend: { position: 'right' } } }
-  });
-}
-
-/* Processos ativos da base sem publicação recente. Cruzamento pelo número
-   normalizado a dígitos — máscara difere entre as duas fontes. */
 function processosMudos(d) {
   const comPub = new Set(d.pubs.map(p => p.processoDigitos));
   const out = [];
@@ -2130,7 +3177,8 @@ function renderMudos(d) {
   const m = processosMudos(d);
   document.getElementById('subMudos').innerHTML =
     '<b>' + num(m.length) + '</b> processos ativos sem publicação no período consultado e com mais de <b>' +
-    METAS.processoMudoDias + ' dias</b> sem movimento. É o padrão que antecede arquivamento silencioso.';
+    METAS.processoMudoDias + ' dias</b> sem movimento. É o padrão que antecede arquivamento silencioso — ' +
+    'e cada um é uma tese que não vai gerar resultado.';
   const vis = m.slice(0, 150);
   document.getElementById('corpoMudos').innerHTML = vis.length ? vis.map(p =>
     '<tr><td><b>' + esc(p.numero) + '</b></td>' +
@@ -2143,152 +3191,162 @@ function renderMudos(d) {
   ).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhum processo mudo.</td></tr>';
 }
 
-/* ------------------------------------------------------------------- CEO */
-function renderCeo(d, f) {
-  const oper = f.filter(ehOperacional);
-  const comValor = f.filter(p => p.temValor);
-  const somaValor = comValor.reduce((s, p) => s + (p.valor || 0), 0);
-  const desfav = f.filter(p => p.resultado === 'Desfavorável');
-  const decisivas = f.filter(p => p.resultado !== 'Não aplicável');
-  const mudos = processosMudos(d);
-  const errosColeta = d.coleta.oabs.filter(o => o.http !== 200).length;
-  const transito = f.filter(p => /tr[âa]nsito em julgado/i.test(p.detalhe || p.texto));
-
-  document.getElementById('kpisCeo').innerHTML = [
-    cartaoKPI('Publicações no período', num(f.length), 'azul',
-      '<span>de <b>' + num(new Set(f.map(p => p.processoDigitos)).size) + '</b> processos distintos</span>'),
-    cartaoKPI('Taxa de resultado favorável',
-      pct1(decisivas.length ? f.filter(p => p.resultado === 'Favorável').length / decisivas.length * 100 : null),
-      decisivas.length ? 'verde' : 'neutro',
-      '<span>sobre <b>' + num(decisivas.length) + '</b> com dispositivo legível</span>'),
-    cartaoKPI('Dinheiro citado', somaValor ? moeda(somaValor) : '—', somaValor ? 'roxo' : 'neutro',
-      '<span><b>' + num(comValor.length) + '</b> publicações mencionam valor</span>'),
-    cartaoKPI('Trânsitos em julgado', num(transito.length), transito.length ? 'amarelo' : 'neutro',
-      '<span>receita conquistada — verificar execução iniciada</span>'),
-    cartaoKPI('Backlog de triagem', num(oper.length), oper.length ? 'amarelo' : 'verde',
-      '<span>meta ao fim do dia: <b>' + METAS.filaZeradaAoFimDoDia + '</b></span>'),
-    cartaoKPI('Processos mudos', num(mudos.length), mudos.length ? 'vermelho' : 'verde',
-      '<span>ativos e sem publicação há mais de ' + METAS.processoMudoDias + ' dias</span>'),
-    cartaoKPI('Decisões desfavoráveis', num(desfav.length), desfav.length ? 'vermelho' : 'verde',
-      '<span>no recorte selecionado</span>'),
-    cartaoKPI('Saúde da coleta', errosColeta ? 'Com falha' : 'Íntegra',
-      errosColeta ? 'vermelho' : 'verde',
-      '<span>' + (errosColeta ? num(errosColeta) + ' inscrição(ões) com erro' : 'todas responderam') + '</span>')
+function renderColeta(d) {
+  const c = d.coleta;
+  const erros = c.oabs.filter(o => o.http !== 200).length + c.erros;
+  const total = c.oabs.reduce((s, o) => s + o.novos, 0);
+  document.getElementById('saudeColeta').innerHTML = [
+    itemResumo('Situação', erros ? 'Com falha' : 'Íntegra',
+      erros ? num(erros) + ' inscrição(ões) sem resposta' : 'todas as inscrições responderam',
+      erros ? COR_VERMELHO : COR_VERDE),
+    itemResumo('Publicações lidas', num(total),
+      'janela de ' + d.janela.ini.split('-').reverse().join('/') + ' a ' +
+      d.janela.fim.split('-').reverse().join('/'), COR_AZUL),
+    itemResumo('Páginas buscadas', num(c.oabs.reduce((s, o) => s + o.paginas, 0)),
+      '50 itens por página', COR_ROXO),
+    itemResumo('Concluída em', ((c.fim - c.ini) / 1000).toFixed(0) + 's',
+      c.fim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }), COR_CIANO)
   ].join('');
 
-  /* Cada cartão do cockpit abre a lista que o sustenta. Sem isso o número é
-     inauditável: quem lê não tem como conferir de onde ele saiu. */
-  ligarKPIsEm('kpisCeo', {
-    0: () => listaPubs('Publicações no Período', f),
-    1: () => listaPubs('Publicações com Dispositivo Legível', decisivas,
-      'Só entram as que trazem o dispositivo escrito no texto. As demais ficam fora do cálculo ' +
-      'em vez de contarem como derrota.'),
-    2: () => listaPubs('Publicações com Valor Citado', comValor),
-    3: () => listaPubs('Trânsitos em Julgado', transito,
-      'Receita conquistada. Conferir se a execução ou o levantamento já foi iniciado.', 'alerta'),
-    4: () => listaPubs('Backlog de Triagem', oper,
-      'Últimos 30 dias, não canceladas.'),
-    6: () => listaPubs('Decisões Desfavoráveis', desfav, null, 'alerta')
-  });
+  document.getElementById('corpoColeta').innerHTML = c.oabs.map(o =>
+    '<tr><td><b>' + esc(o.rotulo) + '</b></td>' +
+    '<td><span class="tag-pct ' + (o.http === 200 ? 'verde' : 'vermelho') + '">' + o.http + '</span></td>' +
+    '<td>' + num(o.total) + '</td><td>' + num(o.novos) + '</td><td>' + o.paginas + '</td>' +
+    '<td>' + (o.ms / 1000).toFixed(1) + 's</td>' +
+    '<td style="white-space:normal;max-width:320px;color:var(--texto-muted)">' + esc(o.leitura) + '</td></tr>'
+  ).join('');
 
-  document.getElementById('resumoDinheiro').innerHTML = [
-    itemResumo('Publicações com valor', num(comValor.length),
-      'alvará, honorários, custas, RPV', COR_ROXO),
-    itemResumo('Soma dos valores citados', somaValor ? moeda(somaValor) : '—',
-      'apenas o que veio escrito em reais no texto', COR_VERDE),
-    itemResumo('Trânsitos em julgado', num(transito.length),
-      'conferir se a execução já foi iniciada', COR_AMARELO),
-    itemResumo('Alvarás mencionados', num(f.filter(p => /alvar[áa]/i.test(p.texto)).length),
-      'cruzar com a base de alvarás', COR_CIANO)
-  ].join('');
-
-  const vis = comValor.sort((a, b) => (b.valor || 0) - (a.valor || 0)).slice(0, 100);
-  document.getElementById('corpoDinheiro').innerHTML = vis.length ? vis.map(p =>
-    '<tr><td>' + dtBR(p.disp) + '</td><td><b>' + esc(p.processo || '—') + '</b></td>' +
-    '<td style="white-space:normal;max-width:170px">' + esc(p.cliente || '—') + '</td>' +
-    '<td>' + esc(p.tribunal) + '</td><td>' + esc(p.ato) + '</td>' +
-    '<td>' + (p.valor ? '<b>' + moeda(p.valor) + '</b>' :
-      '<span style="color:var(--texto-muted)">sem valor numérico</span>') + '</td>' +
-    '<td style="white-space:normal;max-width:280px;color:var(--texto-muted)">' +
-      esc(trechoValor(p.texto)) + '</td></tr>'
-  ).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhuma publicação com valor no recorte.</td></tr>';
-  if (vis.length) tabelaClicavel('corpoDinheiro', vis, fichaPub);
-  document.getElementById('notaDinheiro').textContent =
-    'Exibindo ' + vis.length + ' de ' + comValor.length + ', do maior valor para o menor.';
-
-  /* risco */
-  const linhas = [
-    ['Prazos já vencidos', oper.filter(p => p.exigePrazo && p.fatal &&
-      p.fatal < HOJE).length, '0', 'verificar nos autos se o prazo correu — prioridade máxima'],
-    ['Prazos vencendo em 24h', oper.filter(p => p.exigePrazo && p.fatal &&
-      p.fatal >= HOJE && (p.fatal - HOJE) / 86400000 <= 1).length, '0',
-      'atribuir responsável hoje'],
-    ['Publicações órfãs', oper.filter(p => p.orfa).length, '0',
-      'cadastrar o processo ou confirmar que é de terceiro'],
-    ['Publicações canceladas', f.filter(p => p.cancelada).length, '0',
-      'revisar prazos abertos com base nelas'],
-    ['Confiança abaixo de ' + METAS.confiancaMinima + '%',
-      oper.filter(p => p.exigePrazo && p.confianca < METAS.confiancaMinima).length, '0',
-      'leitura humana antes de lançar o prazo'],
-    ['Processos mudos', mudos.length, '0', 'diligenciar os mais antigos'],
-    ['Inscrições com erro de coleta', errosColeta, '0', 'reconsultar e verificar a chave'],
-    ['Backlog de triagem', oper.length, String(METAS.filaZeradaAoFimDoDia),
-      'zerar até o fim do dia']
-  ];
-  document.getElementById('corpoRisco').innerHTML = linhas.map(l => {
-    const ok = l[1] <= Number(l[2]);
-    return '<tr><td><b>' + l[0] + '</b></td><td>' + num(l[1]) + '</td><td>' + l[2] + '</td>' +
-      '<td><span class="tag-pct ' + (ok ? 'verde' : 'vermelho') + '">' +
-      (ok ? 'dentro' : 'fora') + '</span></td>' +
-      '<td style="color:var(--texto-muted)">' + (ok ? '—' : l[3]) + '</td></tr>';
-  }).join('');
-
-  /* O que falta para o cockpit financeiro. Dizer qual planilha alimenta cada
-     bloco é o que separa "ainda não temos" de "o número está errado". */
-  document.getElementById('fontesFaltantes').innerHTML = [
-    obsCard('alerta', '&#128202;', 'Receita, previsibilidade e ticket médio',
-      'Dependem da planilha <b>Fluxo de Honorários</b>, que já existe e alimenta o painel Financeiro. ' +
-      'Falta a chave de ligação: hoje não há coluna de número de processo nos lançamentos de honorários, ' +
-      'então não dá para cruzar publicação com receita. <b>Providência:</b> acrescentar o número do processo ' +
-      'aos lançamentos de êxito e sucumbência.'),
-    obsCard('alerta', '&#128176;', 'Alvarás expedidos e não levantados',
-      'Depende da planilha <b>Alvarás e Acordos</b>, que já tem os dados. O painel identifica a publicação ' +
-      'que menciona alvará, mas não sabe se ele foi sacado. <b>Providência:</b> ligar as duas bases pelo ' +
-      'número do processo para fechar a ponte publicação → alvará → recebimento.'),
-    obsCard('alerta', '&#9878;', 'Trânsito em julgado sem execução iniciada',
-      'O painel já detecta a publicação de trânsito em julgado. Falta cruzar com a base de ' +
-      '<b>Execuções de Sentença</b> para saber quais ainda não viraram execução. ' +
-      '<b>Providência:</b> mesma chave, número do processo.'),
-    obsCard('alerta', '&#128101;', 'Produtividade e carga por responsável',
-      'Depende de uma coluna de <b>responsável</b> por publicação, que não existe hoje — o DJEN não traz e ' +
-      'a triagem ainda não é registrada. <b>Providência:</b> criar a aba de triagem com responsável e ' +
-      'carimbo de cada transição; é dela que saem todos os indicadores de SLA.'),
-    obsCard('alerta', '&#128200;', 'CAC, conversão e churn',
-      'Dependem das bases de <b>CRM Jurídico</b> e <b>Fluxo de Clientes</b>, que existem mas não têm ' +
-      'ligação com publicações. Este bloco pertence ao painel comercial, não a este.')
-  ].join('');
+  const tarja = document.getElementById('tarjaColeta');
+  tarja.classList.toggle('oculto', !erros);
+  if (erros) tarja.innerHTML = '<b>A coleta falhou em ' + num(erros) + ' inscrição(ões).</b> ' +
+    'Enquanto isso não se resolver, ausência de publicação não significa ausência de movimento — ' +
+    'e nenhum indicador desta tela é confiável.';
 }
 
-function trechoValor(t) {
-  const s = String(t || '').replace(/\s+/g, ' ');
-  const m = /.{0,60}R\$\s*[\d.]+,\d{2}.{0,60}/.exec(s);
-  if (m) return '…' + m[0].trim() + '…';
-  const m2 = /.{0,50}(alvar[áa]|honor[áa]rios|RPV|precat[óo]rio).{0,60}/i.exec(s);
-  return m2 ? '…' + m2[0].trim() + '…' : s.slice(0, 110) + '…';
+/* ===================================================================== CEO */
+function renderCeo(d, f) {
+  const dec = f.filter(ehDecisao);
+  const pl = placar(dec);
+  const sent = dec.filter(p => p.julgamento === 'Sentença');
+  const fila = paraExecutar(f);
+  const soma = fila.reduce((s, p) => s + p.condenacao, 0);
+  const mudos = processosMudos(d);
+  const divs = f.filter(p => divergencia(p));
+  const procs = [...d.processos.values()];
+  const aguardando = procs.filter(p => /ainda n[ãa]o solicitado|aguardando compensa/i.test(p.alvara || '')).length;
+
+  document.getElementById('kpisCeo').innerHTML = [
+    cartaoKPI('Taxa de êxito no período', pct1(pl.exito), classeExito(pl.exito),
+      '<span><b>' + num(dec.length) + '</b> decisões com dispositivo legível</span>'),
+    cartaoKPI('Procedência em sentença',
+      pct1(placar(sent).exito), classeExito(placar(sent).exito),
+      '<span><b>' + num(sent.length) + '</b> sentenças no recorte</span>'),
+    cartaoKPI('Condenação a executar', soma ? moeda(soma) : '—', soma ? 'verde' : 'neutro',
+      '<span><b>' + num(fila.length) + '</b> decisões com valor identificado</span>'),
+    cartaoKPI('Alvarás pendentes', num(aguardando), aguardando ? 'amarelo' : 'verde',
+      '<span>ganho que ainda não virou dinheiro</span>'),
+    cartaoKPI('Registro atrás do diário', num(divs.length), divs.length ? 'vermelho' : 'verde',
+      '<span>decisões publicadas e não registradas</span>'),
+    cartaoKPI('Processos mudos', num(mudos.length), mudos.length ? 'vermelho' : 'verde',
+      '<span>ativos e parados há mais de ' + METAS.processoMudoDias + ' dias</span>'),
+    cartaoKPI('Carteira na base', num(procs.length), 'azul',
+      '<span>processos no DataJud</span>'),
+    cartaoKPI('Saúde da coleta', d.coleta.oabs.some(o => o.http !== 200) ? 'Com falha' : 'Íntegra',
+      d.coleta.oabs.some(o => o.http !== 200) ? 'vermelho' : 'verde',
+      '<span>todas as inscrições responderam</span>')
+  ].join('');
+
+  ligarKPIsEm('kpisCeo', {
+    0: () => listaPubs('Decisões do Período', dec),
+    1: () => listaPubs('Sentenças', sent),
+    2: () => listaPubs('Condenações Identificadas', fila),
+    4: () => listaPubs('Decisões Publicadas e Não Registradas', divs,
+        'O diário publicou e a planilha ainda não registrou. Processo ganho sem registro não vira execução.', 'alerta')
+  });
+
+  /* produto × julgamento — onde a tese ganha e onde ela para */
+  const prods = [...agrupar(dec, p => p.produto).entries()]
+    .sort((a, b) => b[1].length - a[1].length).slice(0, 10).map(x => x[0]);
+  const fases = ['Liminar', 'Sentença', 'Recurso'];
+  document.getElementById('matrizProdutoFase').innerHTML = !dec.length
+    ? '<div class="sem-vazio">Sem decisões no recorte.</div>'
+    : '<table class="calor"><thead><tr><th>Produto</th>' +
+      fases.map(x => '<th>' + x + '</th>').join('') + '<th>Geral</th></tr></thead><tbody>' +
+      prods.map(pr => {
+        const linha = fases.map(fa => {
+          const itens = dec.filter(p => p.produto === pr && p.julgamento === fa);
+          const g = placar(itens);
+          return '<td class="cel-calor" data-p="' + esc(pr) + '" data-f="' + esc(fa) + '"' +
+            (itens.length ? ' style="background:' + hexA(corExito(g.exito), .22) + '"' : '') + '>' +
+            (itens.length ? '<b>' + pct1(g.exito) + '</b><br><span style="font-size:.68rem;color:var(--texto-muted)">' +
+              itens.length + '</span>' : '—') + '</td>';
+        }).join('');
+        const ger = placar(dec.filter(p => p.produto === pr));
+        return '<tr><td><b>' + esc(pr) + '</b></td>' + linha +
+          '<td><span class="tag-pct ' + classeExito(ger.exito) + '">' + pct1(ger.exito) + '</span></td></tr>';
+      }).join('') + '</tbody></table>';
+
+  document.querySelectorAll('#matrizProdutoFase .cel-calor').forEach(c => {
+    c.onclick = () => {
+      const itens = dec.filter(p => p.produto === c.dataset.p && p.julgamento === c.dataset.f);
+      if (itens.length) listaPubs(c.dataset.p + ' — ' + c.dataset.f, itens);
+    };
+  });
+
+  /* leitura */
+  const A = [];
+  if (pl.exito !== null && pl.exito < 35) A.push(['critico', '&#9888;', 'Êxito abaixo de 35% no período',
+    'De <b>' + num(dec.length) + '</b> decisões, <b>' + num(pl.perdas) + '</b> vieram contra. ' +
+    'Antes de concluir que a tese não passa, verifique a composição: extinção do processo não é derrota de mérito, ' +
+    'e ela pode estar puxando o número para baixo.']);
+  if (divs.length) A.push(['alerta', '&#128203;', num(divs.length) + ' decisões não registradas na planilha',
+    'O diário publicou e o registro não acompanhou. É o ponto em que um processo ganho deixa de virar execução — ' +
+    'e nenhum relatório que se apoie na planilha vai mostrar isso.']);
+  if (aguardando) A.push(['alerta', '&#128176;', num(aguardando) + ' alvarás pendentes na carteira',
+    'Processos com valor a receber ainda não solicitados ou aguardando compensação. É a distância entre ganhar e receber.']);
+  if (mudos.length) A.push(['alerta', '&#128064;', num(mudos.length) + ' processos mudos',
+    'Ativos e sem movimento há mais de ' + METAS.processoMudoDias + ' dias. Cada um é uma tese que não vai gerar resultado ' +
+    'nem receita enquanto ficar parada.']);
+  const semProc = f.filter(p => p.orfa).length;
+  if (semProc) A.push(['alerta', '&#128269;', num(semProc) + ' publicações sem processo na base',
+    'Sem par no DataJud, o painel não sabe cliente nem produto — essas publicações ficam fora de toda a análise por produto.']);
+  const baixa = dec.filter(p => p.confianca < METAS.confiancaMinima).length;
+  if (baixa) A.push(['info', '&#128269;', num(baixa) + ' decisões com leitura de baixa confiança',
+    'O dispositivo não estava claro no texto. Elas contam nos totais, mas convém conferir antes de decidir estratégia com base nelas.']);
+  if (!A.length) A.push(['ok', '&#10004;', 'Nada exigindo decisão no recorte atual',
+    'Coleta íntegra, registro em dia e sem carteira parada.']);
+  document.getElementById('leituraCeo').innerHTML = A.map(x => obsCard(x[0], x[1], x[2], x[3])).join('');
+
+  document.getElementById('fontesFaltantes').innerHTML = [
+    obsCard('info', '&#128202;', 'Receita, previsibilidade e ticket médio',
+      'Dependem da planilha <b>Fluxo de Honorários</b>, que já existe e alimenta o painel Financeiro. Falta a chave de ' +
+      'ligação: os lançamentos não têm número de processo, então não dá para cruzar decisão com receita. ' +
+      '<b>Providência:</b> acrescentar o número do processo aos lançamentos de êxito e sucumbência.'),
+    obsCard('info', '&#128176;', 'Alvarás expedidos e não levantados',
+      'A coluna <b>Situação do Alvará</b> da planilha do DataJud já traz o estágio, e ela está sendo lida aqui. ' +
+      'O que falta é o <b>valor</b> de cada alvará — hoje só existe o estágio, não o montante. ' +
+      '<b>Providência:</b> acrescentar coluna de valor do alvará.'),
+    obsCard('info', '&#128209;', 'Produto jurídico como cadastro, não como dedução',
+      'Aqui o produto é deduzido do assunto do CNJ. A planilha de Controle de Publicações tem a coluna preenchida à mão ' +
+      'e é mais confiável. <b>Providência:</b> criar coluna de produto na base do DataJud, e o painel passa a ler em vez de deduzir.')
+  ].join('');
 }
 
 
 /* =========================================================================
-   CONTROLES E CICLO
+   CONTROLES, RELATÓRIOS E CICLO
    ========================================================================= */
 let controlesProntos = false;
+let maisFiltros = false;
 
 function chips(container, itens, ativos, aoTrocar) {
   const el = document.getElementById(container);
-  el.innerHTML = itens.map(i =>
+  if (!el) return;
+  el.innerHTML = itens.length ? itens.map(i =>
     '<button type="button" class="chip' + (ativos.has(i.v) ? ' ativo' : '') +
     '" data-v="' + esc(i.v) + '">' + esc(i.r) +
-    (i.n !== undefined ? ' <span class="chip-qtd">' + num(i.n) + '</span>' : '') + '</button>').join('');
+    (i.n !== undefined ? ' <span class="chip-qtd">' + num(i.n) + '</span>' : '') + '</button>').join('')
+    : '<span style="font-size:.78rem;color:var(--texto-muted)">nada no recorte</span>';
   el.onclick = ev => {
     const b = ev.target.closest('.chip'); if (!b) return;
     const v = b.dataset.v;
@@ -2298,24 +3356,66 @@ function chips(container, itens, ativos, aoTrocar) {
   };
 }
 
-function montarControles(d) {
-  /* Inscrições: trocar a seleção muda a própria chamada à API, então recarrega. */
-  chips('filtrosOab',
-    OABS.map(o => ({ v: o.chave, r: o.rotulo,
-      n: d.pubs.filter(p => p.oabs.indexOf(o.chave) >= 0).length })),
-    FILTRO.oabs, () => carregarDados());
+/* Contagem de chip mostra o universo SEM o próprio filtro: um chip que zera a
+   si mesmo ao ser clicado é inútil para comparar. */
+function contarSem(pubs, dimensao, valor) {
+  const guarda = FILTRO[dimensao];
+  FILTRO[dimensao] = new Set();
+  const n = filtrar(pubs).filter(p => {
+    if (dimensao === 'julgamentos') return p.julgamento === valor;
+    if (dimensao === 'dispositivos') return p.dispositivo === valor;
+    if (dimensao === 'produtos') return p.produto === valor;
+    if (dimensao === 'tribunais') return p.tribunal === valor;
+    if (dimensao === 'tipos') return p.ato === valor;
+    return false;
+  }).length;
+  FILTRO[dimensao] = guarda;
+  return n;
+}
 
-  const porTrib = d.pubs.reduce((m, p) => { m[p.tribunal] = (m[p.tribunal] || 0) + 1; return m; }, {});
+function montarControles(d) {
+  const pubs = d.pubs;
+
+  chips('filtrosJulgamento',
+    ['Sentença', 'Recurso', 'Liminar', 'Outros atos']
+      .filter(j => pubs.some(p => p.julgamento === j))
+      .map(j => ({ v: j, r: j, n: contarSem(pubs, 'julgamentos', j) })),
+    FILTRO.julgamentos, () => desenhar());
+
+  const ordemDisp = ['Procedente', 'Parcialmente procedente', 'Improcedente', 'Acordo homologado',
+                     'Extinção do processo', 'Recurso provido', 'Recurso parcialmente provido',
+                     'Recurso não provido', 'Liminar deferida', 'Liminar indeferida', 'Sem dispositivo'];
+  chips('filtrosDispositivo',
+    ordemDisp.filter(x => pubs.some(p => p.dispositivo === x))
+      .map(x => ({ v: x, r: x, n: contarSem(pubs, 'dispositivos', x) })),
+    FILTRO.dispositivos, () => desenhar());
+
+  const prods = [...new Set(pubs.map(p => p.produto))]
+    .map(x => [x, pubs.filter(p => p.produto === x).length])
+    .sort((a, b) => b[1] - a[1]);
+  chips('filtrosProduto',
+    prods.map(([x]) => ({ v: x, r: x, n: contarSem(pubs, 'produtos', x) })),
+    FILTRO.produtos, () => desenhar());
+
+  const tribs = [...new Set(pubs.map(p => p.tribunal))]
+    .map(x => [x, pubs.filter(p => p.tribunal === x).length])
+    .sort((a, b) => b[1] - a[1]).slice(0, 16);
   chips('filtrosTribunal',
-    Object.entries(porTrib).sort((a, b) => b[1] - a[1]).slice(0, 14)
-      .map(([t, n]) => ({ v: t, r: t, n })),
+    tribs.map(([x]) => ({ v: x, r: x, n: contarSem(pubs, 'tribunais', x) })),
     FILTRO.tribunais, () => desenhar());
 
-  const porAto = d.pubs.reduce((m, p) => { m[p.ato] = (m[p.ato] || 0) + 1; return m; }, {});
+  const atos = [...new Set(pubs.map(p => p.ato))]
+    .map(x => [x, pubs.filter(p => p.ato === x).length])
+    .sort((a, b) => b[1] - a[1]);
   chips('filtrosTipo',
-    Object.entries(porAto).sort((a, b) => b[1] - a[1])
-      .map(([t, n]) => ({ v: t, r: t, n })),
+    atos.map(([x]) => ({ v: x, r: x, n: contarSem(pubs, 'tipos', x) })),
     FILTRO.tipos, () => desenhar());
+
+  /* Inscrição muda a própria chamada à API, então recarrega em vez de filtrar. */
+  chips('filtrosOab',
+    OABS.map(o => ({ v: o.chave, r: o.rotulo,
+      n: pubs.filter(p => p.oabs.indexOf(o.chave) >= 0).length })),
+    FILTRO.oabs, () => carregarDados());
 
   if (controlesProntos) return;
   controlesProntos = true;
@@ -2340,9 +3440,19 @@ function montarControles(d) {
 
   ligarBusca('buscaCampo', t => { FILTRO.busca = t; desenhar(); });
 
+  document.getElementById('btnMaisFiltros').onclick = ev => {
+    maisFiltros = !maisFiltros;
+    document.getElementById('linhaTipo').classList.toggle('oculto', !maisFiltros);
+    document.getElementById('linhaOab').classList.toggle('oculto', !maisFiltros);
+    ev.target.classList.toggle('ativo', maisFiltros);
+    ev.target.textContent = maisFiltros ? 'Menos filtros' : 'Mais filtros';
+  };
+
   document.getElementById('btnLimparTudo').onclick = () => {
-    FILTRO.tribunais.clear(); FILTRO.tipos.clear(); FILTRO.busca = '';
-    const b = document.querySelector('#buscaCampo input'); if (b) b.value = '';
+    FILTRO.tribunais.clear(); FILTRO.tipos.clear();
+    FILTRO.julgamentos.clear(); FILTRO.dispositivos.clear(); FILTRO.produtos.clear();
+    FILTRO.busca = '';
+    const b = document.getElementById('buscaCampo'); if (b) b.value = '';
     montarControles(BASE); desenhar();
   };
 
@@ -2350,40 +3460,210 @@ function montarControles(d) {
     const b = ev.target.closest('.aba'); if (!b) return;
     FILTRO.aba = b.dataset.aba;
     document.querySelectorAll('.aba').forEach(a => a.classList.toggle('ativa', a === b));
-    ['operacao', 'analise', 'ceo'].forEach(k =>
+    ['resultados', 'execucao', 'carteira', 'relatorio', 'ceo'].forEach(k =>
       document.getElementById('painel-' + k).classList.toggle('oculto', k !== FILTRO.aba));
     desenhar();
   });
 
-  document.getElementById('btnCSV').onclick = () => {
-    const f = filtrar(BASE.pubs);
-    const cab = ['Disponibilizacao','Publicacao','Inicio do prazo','Prazo fatal sugerido','Dias de prazo',
-                 'Tribunal','Orgao','Processo','Cliente','Tipo de ato','Resultado','Detalhe',
-                 'Confianca','Exige prazo','Tem valor','Valor citado','Cancelada','Orfa',
-                 'Inscricoes','Classe','Meio','ID DJEN','Link certidao','Texto'];
-    const linhas = f.map(p => [
-      dtBR(p.disp), dtBR(p.pub), dtBR(p.inicioPrazo), dtBR(p.fatal), p.prazoDias || '',
-      p.tribunal, p.orgao, p.processo, p.cliente, p.ato, p.resultado, p.detalhe,
-      p.confianca, p.exigePrazo ? 'sim' : 'nao', p.temValor ? 'sim' : 'nao', p.valor || '',
-      p.cancelada ? 'sim' : 'nao', p.orfa ? 'sim' : 'nao',
-      p.oabs.join(' '), p.classe, p.meio, p.id,
-      p.hash ? API_DJEN + '/' + p.hash + '/certidao' : '',
-      String(p.texto || '').replace(/\s+/g, ' ')
-    ]);
-    const csv = [cab].concat(linhas)
-      .map(l => l.map(c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(';')).join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'publicacoes-djen-' + new Date().toISOString().slice(0, 10) + '.csv';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-  };
+  montarRelatorio();
 }
 
+/* ==================================================== RELATÓRIOS E EXTRAÇÃO
+   O painel responde perguntas fixas; o relatório existe para as perguntas que
+   ninguém previu. Os filtros do topo continuam valendo, e a extração sai com
+   exatamente o recorte que está na tela. */
+const COLUNAS_REL = {
+  publicacoes: [
+    ['disponibilizacao', 'Disponibilização', p => dtBR(p.disp), true],
+    ['publicacao', 'Publicação', p => dtBR(p.pub), false],
+    ['inicio_prazo', 'Início do prazo', p => dtBR(p.inicioPrazo), false],
+    ['prazo', 'Prazo sugerido', p => p.exigePrazo ? dtBR(p.fatal) : '', false],
+    ['processo', 'Processo', p => p.processo, true],
+    ['cliente', 'Cliente', p => p.cliente, true],
+    ['autor', 'Autor', p => p.autor || '', true],
+    ['reu', 'Réu', p => p.reu || '', true],
+    ['polo', 'Cliente representado', p => p.polo || '', false],
+    ['produto', 'Produto', p => p.produto, true],
+    ['produto_origem', 'Produto — origem', p => p.produtoCadastrado ? 'cadastrado' : 'deduzido', false],
+    ['tribunal', 'Tribunal', p => p.tribunal, true],
+    ['orgao', 'Órgão julgador', p => p.orgao, false],
+    ['ato', 'Tipo de ato', p => p.ato, true],
+    ['julgamento', 'Julgamento', p => p.julgamento, true],
+    ['recurso', 'Espécie de recurso', p => p.recurso || '', true],
+    ['dispositivo', 'Resultado', p => p.dispositivo, true],
+    ['resultado', 'Favorável/Desfavorável', p => p.resultado, false],
+    ['condenacao', 'Condenação identificada', p => p.condenacao || '', true],
+    ['transito', 'Trânsito mencionado', p => p.transitou ? 'sim' : 'não', true],
+    ['confianca', 'Confiança da leitura', p => p.confianca, true],
+    ['res_sentenca', 'Registro — sentença', p => p.resSentenca || '', true],
+    ['res_recurso', 'Registro — recurso', p => p.resRecurso || '', false],
+    ['alvara', 'Registro — alvará', p => p.alvara || '', false],
+    ['valor_causa', 'Valor da causa', p => p.valorCausa || '', false],
+    ['fase', 'Fase processual', p => p.faseProc || '', false],
+    ['area', 'Assunto CNJ', p => p.area || '', false],
+    ['classe', 'Classe', p => p.classe || '', false],
+    ['orfa', 'Sem processo na base', p => p.orfa ? 'sim' : 'não', false],
+    ['cancelada', 'Cancelada', p => p.cancelada ? 'sim' : 'não', false],
+    ['inscricoes', 'Inscrições', p => p.oabs.join(' '), false],
+    ['id_djen', 'ID no DJEN', p => p.id, false],
+    ['certidao', 'Link da certidão', p => p.hash ? API_DJEN + '/' + p.hash + '/certidao' : '', false],
+    ['texto', 'Texto integral', p => p.texto, false]
+  ],
+  processos: [
+    ['processo', 'Processo', p => p.numero, true],
+    ['cliente', 'Cliente', p => p.cliente, true],
+    ['autor', 'Autor', p => (BASE.clientes.get(String(p.numero).replace(/\D/g, '')) || {}).autor || '', true],
+    ['reu', 'Réu', p => (BASE.clientes.get(String(p.numero).replace(/\D/g, '')) || {}).reu || '', true],
+    ['produto', 'Produto', p => (BASE.clientes.get(String(p.numero).replace(/\D/g, '')) || {}).produto || p.produto, true],
+    ['tribunal', 'Tribunal', p => p.tribunal, true],
+    ['vara', 'Vara', p => p.vara, false],
+    ['classe', 'Classe', p => p.classe, false],
+    ['assunto', 'Assunto CNJ', p => p.assunto, false],
+    ['fase', 'Fase processual', p => p.fase, true],
+    ['res_sentenca', 'Resultado da sentença', p => p.resSentenca, true],
+    ['res_recurso', 'Resultado do recurso', p => p.resRecurso, true],
+    ['alvara', 'Situação do alvará', p => p.alvara, true],
+    ['valor_causa', 'Valor da causa', p => p.valorCausa || '', true],
+    ['status', 'Status do processo', p => p.statusProcesso, true],
+    ['dias', 'Dias sem movimentação', p => p.dias === null ? '' : p.dias, true],
+    ['ult_pub', 'Última publicação', p => p.ultPub, false],
+    ['situacao', 'Situação', p => p.situacao, false],
+    ['ajuizamento', 'Ajuizamento', p => dtBR(p.ajuizamento), false]
+  ],
+  valores: [
+    ['disponibilizacao', 'Disponibilização', r => dtBR(r.pub.disp), true],
+    ['processo', 'Processo', r => r.pub.processo, true],
+    ['cliente', 'Cliente', r => r.pub.cliente, true],
+    ['reu', 'Réu', r => r.pub.reu || '', true],
+    ['produto', 'Produto', r => r.pub.produto, true],
+    ['julgamento', 'Julgamento', r => r.pub.julgamento, true],
+    ['dispositivo', 'Resultado', r => r.pub.dispositivo, true],
+    ['natureza', 'Natureza do valor', r => r.v.tipo, true],
+    ['valor', 'Valor', r => r.v.valor, true],
+    ['trecho', 'Trecho de onde saiu', r => r.v.trecho, true],
+    ['certidao', 'Link da certidão', r => r.pub.hash ? API_DJEN + '/' + r.pub.hash + '/certidao' : '', false]
+  ]
+};
+COLUNAS_REL.decisoes = COLUNAS_REL.publicacoes;
+
+let unidadeRel = 'publicacoes';
+let colunasRel = new Set();
+
+function defsRel() { return COLUNAS_REL[unidadeRel] || COLUNAS_REL.publicacoes; }
+function padraoRel() {
+  colunasRel = new Set(defsRel().filter(c => c[3]).map(c => c[0]));
+}
+
+function montarRelatorio() {
+  padraoRel();
+  document.getElementById('unidadeRel').onclick = ev => {
+    const b = ev.target.closest('.chip[data-un]'); if (!b) return;
+    document.querySelectorAll('#unidadeRel .chip').forEach(c => c.classList.remove('ativo'));
+    b.classList.add('ativo');
+    unidadeRel = b.dataset.un;
+    padraoRel();
+    desenhar();
+  };
+  document.getElementById('btnRelTodas').onclick = () => {
+    colunasRel = new Set(defsRel().map(c => c[0])); desenhar();
+  };
+  document.getElementById('btnRelPadrao').onclick = () => { padraoRel(); desenhar(); };
+  document.getElementById('btnRelCSV').onclick = () => baixarRel('csv');
+  document.getElementById('btnRelXLSX').onclick = () => baixarRel('xlsx');
+}
+
+/* Linhas do relatório conforme a unidade escolhida. Publicação, decisão,
+   processo e valor respondem perguntas diferentes e não cabem numa tabela só. */
+function linhasRel() {
+  const f = filtrar(BASE.pubs);
+  if (unidadeRel === 'publicacoes') return f;
+  if (unidadeRel === 'decisoes') return f.filter(ehDecisao);
+  if (unidadeRel === 'valores') {
+    const out = [];
+    for (const p of f) for (const v of (p.valores || [])) out.push({ pub: p, v });
+    return out.sort((a, b) => b.v.valor - a.v.valor);
+  }
+  /* Processos: só os que aparecem no recorte, para o relatório respeitar o
+     filtro em vez de despejar a base inteira sem relação com a tela. */
+  const nums = new Set(f.map(p => p.processoDigitos));
+  const out = [];
+  for (const [dig, proc] of BASE.processos) if (nums.has(dig)) out.push(proc);
+  return out.sort((a, b) => (b.dias || 0) - (a.dias || 0));
+}
+
+function renderRelatorio() {
+  const defs = defsRel();
+  document.getElementById('colunasRel').innerHTML = defs.map(c =>
+    '<button type="button" class="chip' + (colunasRel.has(c[0]) ? ' ativo' : '') +
+    '" data-c="' + esc(c[0]) + '">' + esc(c[1]) + '</button>').join('');
+  document.getElementById('colunasRel').onclick = ev => {
+    const b = ev.target.closest('.chip'); if (!b) return;
+    const k = b.dataset.c;
+    if (colunasRel.has(k)) colunasRel.delete(k); else colunasRel.add(k);
+    b.classList.toggle('ativo', colunasRel.has(k));
+    renderRelatorio();
+  };
+
+  const cols = defs.filter(c => colunasRel.has(c[0]));
+  const linhas = linhasRel();
+  const nomes = { publicacoes: 'publicações', decisoes: 'decisões com dispositivo',
+                  processos: 'processos', valores: 'valores citados' };
+  document.getElementById('subRel').innerHTML =
+    '<b>' + num(linhas.length) + '</b> ' + nomes[unidadeRel] + ' · <b>' + cols.length + '</b> colunas. ' +
+    'O recorte do topo já está aplicado.';
+
+  document.getElementById('cabRel').innerHTML = cols.map(c => '<th>' + esc(c[1]) + '</th>').join('');
+  const vis = linhas.slice(0, 60);
+  document.getElementById('corpoRel').innerHTML = vis.length && cols.length ? vis.map(l =>
+    '<tr>' + cols.map(c => {
+      const v = c[2](l);
+      return '<td style="white-space:normal;max-width:260px">' +
+        esc(String(v === null || v === undefined ? '' : v).slice(0, 220)) + '</td>';
+    }).join('') + '</tr>').join('')
+    : '<tr><td colspan="' + Math.max(1, cols.length) + '" style="text-align:center;color:var(--texto-muted);padding:1.2rem">' +
+      (cols.length ? 'Nada no recorte.' : 'Marque ao menos uma coluna.') + '</td></tr>';
+  document.getElementById('notaRel').innerHTML = linhas.length > vis.length
+    ? 'Prévia das ' + vis.length + ' primeiras linhas. O arquivo baixado leva todas as ' + num(linhas.length) + '.'
+    : '';
+}
+
+function matrizRel() {
+  const cols = defsRel().filter(c => colunasRel.has(c[0]));
+  const linhas = linhasRel();
+  return [cols.map(c => c[1])].concat(linhas.map(l => cols.map(c => {
+    const v = c[2](l);
+    return v === null || v === undefined ? '' : v;
+  })));
+}
+
+function baixarRel(formato) {
+  const m = matrizRel();
+  if (m.length < 2) return;
+  const nome = 'djen-' + unidadeRel + '-' + new Date().toISOString().slice(0, 10);
+  if (formato === 'xlsx' && typeof XLSX !== 'undefined') {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(m), 'DJEN');
+    XLSX.writeFile(wb, nome + '.xlsx');
+    return;
+  }
+  const csv = m.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = nome + '.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* ==================================================================== CICLO */
 function renderResumoFiltro(d, f) {
   const j = d.janela;
   const br = s => s.split('-').reverse().join('/');
-  const partes = ['<b>' + num(f.length) + '</b> publicações · ' + br(j.ini) + ' a ' + br(j.fim)];
+  const dec = f.filter(ehDecisao).length;
+  const partes = ['<b>' + num(f.length) + '</b> publicações · <b>' + num(dec) + '</b> com dispositivo · ' +
+                  br(j.ini) + ' a ' + br(j.fim)];
+  if (FILTRO.julgamentos.size) partes.push([...FILTRO.julgamentos].join(', '));
+  if (FILTRO.dispositivos.size) partes.push([...FILTRO.dispositivos].join(', '));
+  if (FILTRO.produtos.size) partes.push([...FILTRO.produtos].join(', '));
   if (FILTRO.tribunais.size) partes.push(FILTRO.tribunais.size + ' tribunal(is)');
   if (FILTRO.tipos.size) partes.push(FILTRO.tipos.size + ' tipo(s) de ato');
   if (f.length !== d.pubs.length) partes.push('de <b>' + num(d.pubs.length) + '</b> coletadas');
@@ -2404,18 +3684,27 @@ function renderResumoFiltro(d, f) {
 function desenhar() {
   const f = filtrar(BASE.pubs);
   renderResumoFiltro(BASE, f);
-  if (FILTRO.aba === 'operacao') {
-    renderColeta(BASE);
-    renderKPIsOperacao(BASE, f);
-    renderSemaforo(f);
-    renderFila(f);
-    renderAlertas(BASE, f);
-  } else if (FILTRO.aba === 'analise') {
-    renderResultados(f);
-    renderMapaCalor(f);
+  if (FILTRO.aba === 'resultados') {
+    renderKPIsResultado(f);
+    renderSentencas(f);
+    renderAcordaos(f);
+    renderLiminares(f);
+    renderMatrizJulg(f);
+    renderProduto(f);
+    renderContrapartes(f);
+    renderDecisoes(f);
+  } else if (FILTRO.aba === 'execucao') {
+    renderExecucao(BASE, f);
+  } else if (FILTRO.aba === 'carteira') {
+    renderCarteira(BASE);
+    renderDivergencia(f);
     renderTendencia(f);
-    renderPorOab(BASE, f);
+    renderMapaCalor(f);
+    renderSemaforo(f);
     renderMudos(BASE);
+    renderColeta(BASE);
+  } else if (FILTRO.aba === 'relatorio') {
+    renderRelatorio();
   } else {
     renderCeo(BASE, f);
   }
