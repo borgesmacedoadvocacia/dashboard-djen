@@ -905,10 +905,15 @@
       <div class="filtro-linha">
         <span class="filtro-rotulo">Providência</span>
         <div class="filtros">
+          <button type="button" class="chip" id="foraEnviar">Incluir na base do DataJud</button>
+          <button type="button" class="chip" id="foraConfig">Configurar envio</button>
+          <div class="sep"></div>
           <button type="button" class="chip" id="foraCopiar">Copiar números</button>
           <button type="button" class="chip" id="foraCSV">Exportar XLSX</button>
         </div>
       </div>
+      <div class="secao-sub" id="envioStatus" style="margin:0 0 .5rem 0">—</div>
+      <div class="secao-sub" id="avisoFora" style="margin:0 0 .8rem 0"></div>
       <div class="card">
         <div class="tabela-wrap">
           <table id="tabelaFora">
@@ -3137,6 +3142,33 @@ function renderForaDaBase(f) {
   ).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nenhum processo fora da base.</td></tr>';
   if (fora.length) tabelaClicavel('corpoFora', fora.map(r => r.pub), fichaPub);
 
+  /* Envio automático: configurado uma vez, o painel avisa a planilha sozinho
+     a cada abertura. É o que faz a base acompanhar os ~40 processos novos por
+     mês sem ninguém copiar nada. */
+  const cfgOk = webappConfigurado();
+  const st = document.getElementById('envioStatus');
+  if (st) st.innerHTML = cfgOk
+    ? '<span style="color:var(--verde)">Envio automático ligado</span> — o que sair no diário e não estiver na base é incluído na planilha a cada abertura deste painel.'
+    : '<span style="color:var(--amarelo)">Envio automático desligado.</span> Clique em <b>Configurar envio</b> e informe a URL e o token do Web App (os mesmos do botão Atualizar do painel DataJud). Depois disso a base se atualiza sozinha.';
+
+  const btnCfg = document.getElementById('foraConfig');
+  if (btnCfg && !btnCfg.dataset.pronto) {
+    btnCfg.dataset.pronto = '1';
+    btnCfg.addEventListener('click', configurarEnvio);
+  }
+  const btnEnv = document.getElementById('foraEnviar');
+  if (btnEnv) {
+    btnEnv.disabled = !cfgOk;
+    if (!btnEnv.dataset.pronto) {
+      btnEnv.dataset.pronto = '1';
+      btnEnv.addEventListener('click', () => enviarFaltantes(false));
+    }
+  }
+  if (cfgOk && fora.length && !renderForaDaBase._enviou) {
+    renderForaDaBase._enviou = true;
+    enviarFaltantes(true);
+  }
+
   const btnC = document.getElementById('foraCopiar');
   if (btnC && !btnC.dataset.pronto) {
     btnC.dataset.pronto = '1';
@@ -3179,6 +3211,76 @@ function renderForaDaBase(f) {
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     });
   }
+}
+
+/* ------------------------------------------------- envio para a planilha
+   Mesmo Web App que o painel DataJud usa no botão Atualizar; mesma aba _Config,
+   mesmo token. Guardados neste navegador, não no repositório. */
+const LS_WEBAPP = 'bm_djen_webapp';
+const LS_TOKEN = 'bm_djen_token';
+const lerLS = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const gravarLS = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const webappConfigurado = () => !!(lerLS(LS_WEBAPP) && lerLS(LS_TOKEN));
+
+function configurarEnvio() {
+  const u = prompt('URL do Web App do Apps Script (termina em /exec).\n' +
+                   'É a mesma que o painel Processos [DataJud] usa no botão Atualizar.',
+                   lerLS(LS_WEBAPP));
+  if (u !== null) gravarLS(LS_WEBAPP, u.trim());
+  const t = prompt('Token do Web App (campo TOKEN_WEBAPP da aba _Config da planilha):',
+                   lerLS(LS_TOKEN));
+  if (t !== null) gravarLS(LS_TOKEN, t.trim());
+  renderForaDaBase(filtrar(BASE.pubs));
+}
+
+/* O Apps Script costuma bloquear a leitura da resposta por CORS. Tenta ler; se
+   não der, repete em no-cors — o envio em si acontece nos dois casos, e o que
+   se perde é só a confirmação. Por isso a mensagem distingue "incluídos" de
+   "enviados". */
+async function enviarParaBase(numeros, automatico) {
+  const url = lerLS(LS_WEBAPP), tk = lerLS(LS_TOKEN);
+  if (!url || !tk || !numeros.length) return null;
+  const alvo = url + (url.indexOf('?') < 0 ? '?' : '&') +
+    'acao=incluir&token=' + encodeURIComponent(tk) +
+    '&numeros=' + encodeURIComponent(numeros.join(','));
+  try {
+    const r = await fetch(alvo);
+    const j = await r.json();
+    return j;
+  } catch (e) {
+    try { await fetch(alvo, { mode: 'no-cors' }); return { ok: true, cego: true }; }
+    catch (e2) { return { ok: false, erro: String(e2.message || e2) }; }
+  }
+}
+
+/* Marca o que já foi enviado nesta sessão do navegador, para não repetir o
+   envio a cada troca de aba. A planilha ignora duplicado, mas repetir chamada
+   à toa atrasa o painel. */
+const JA_ENVIADOS = new Set();
+
+async function enviarFaltantes(automatico) {
+  const fora = processosForaDaBase(filtrar(BASE.pubs));
+  const novos = fora.map(r => r.numero).filter(n => !JA_ENVIADOS.has(n));
+  const aviso = document.getElementById('avisoFora');
+  if (!novos.length) {
+    if (aviso && !automatico) aviso.textContent = 'Nada novo para enviar.';
+    return;
+  }
+  if (aviso) aviso.textContent = 'Enviando ' + novos.length + ' processo(s) para a planilha…';
+  const r = await enviarParaBase(novos, automatico);
+  novos.forEach(n => JA_ENVIADOS.add(n));
+  if (!aviso) return;
+  if (!r) aviso.textContent = 'Envio não configurado.';
+  else if (r.ok && r.cego)
+    aviso.innerHTML = '<b>' + novos.length + ' processo(s) enviados</b> para a Base geral. ' +
+      'O navegador não conseguiu ler a resposta do Apps Script (CORS), então confirme na planilha. ' +
+      'A sincronização seguinte busca os dados de cada um.';
+  else if (r.ok)
+    aviso.innerHTML = '<b>' + num(r.incluidos || 0) + ' processo(s) incluídos</b> na Base geral' +
+      (r.jaExistiam ? ' · ' + num(r.jaExistiam) + ' já existiam' : '') +
+      '. A sincronização seguinte busca os dados de cada um no DataJud.';
+  else aviso.innerHTML = '<span style="color:var(--vermelho)">Não deu para enviar: ' +
+      esc(r.erro || 'erro desconhecido') + '</span>';
 }
 
 function renderTendencia(f) {
