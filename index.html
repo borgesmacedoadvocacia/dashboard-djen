@@ -532,6 +532,41 @@
   .cel-leitura b { color: var(--texto); }
   .cel-leitura .fraco { font-style: italic; opacity: .8; }
 
+  /* Sete colunas não cabem nos 660px padrão do modal: ou a tabela rola na
+     horizontal escondendo cinco delas, ou o texto quebra no meio da palavra
+     ("Improceden te"). Alarga-se o modal quando há tabela dentro. */
+  .modal { max-width: min(1120px, 95vw); }
+
+  /* Sem largura fixa, o navegador dá à coluna do processo o espaço do texto
+     mais longo — cliente com nome grande levava a coluna a 880px e a tabela a
+     1680px. Layout fixo com proporções resolve. */
+  #modalCorpo .modal-tabela { table-layout: fixed; width: 100%; }
+  #modalCorpo .modal-tabela th,
+  #modalCorpo .modal-tabela td {
+    white-space: normal; overflow-wrap: break-word; word-break: normal;
+    hyphens: none; vertical-align: top; padding: .5rem .55rem;
+  }
+  /* Data e percentual nunca quebram: são curtos e a quebra os torna ilegíveis. */
+  #modalCorpo .modal-tabela td:nth-child(1),
+  #modalCorpo .modal-tabela td:nth-child(7) { white-space: nowrap; }
+  #modalCorpo .modal-tabela th:nth-child(1), #modalCorpo .modal-tabela td:nth-child(1) { width: 10%; }
+  #modalCorpo .modal-tabela th:nth-child(2), #modalCorpo .modal-tabela td:nth-child(2) { width: 22%; }
+  #modalCorpo .modal-tabela th:nth-child(3), #modalCorpo .modal-tabela td:nth-child(3) { width: 20%; }
+  #modalCorpo .modal-tabela th:nth-child(4), #modalCorpo .modal-tabela td:nth-child(4) { width: 12%; }
+  #modalCorpo .modal-tabela th:nth-child(5), #modalCorpo .modal-tabela td:nth-child(5) { width: 16%; }
+  #modalCorpo .modal-tabela th:nth-child(6), #modalCorpo .modal-tabela td:nth-child(6) { width: 11%; }
+  #modalCorpo .modal-tabela th:nth-child(7), #modalCorpo .modal-tabela td:nth-child(7) { width: 9%; }
+  /* O número do processo é uma palavra só de 25 caracteres: aqui a quebra em
+     qualquer ponto é preferível a estourar a coluna. */
+  #modalCorpo .modal-tabela td:nth-child(2) { overflow-wrap: anywhere; }
+
+  @media (max-width: 900px) {
+    /* Em tela estreita a proporção não salva: volta a rolar na horizontal com
+       largura mínima legível, em vez de espremer sete colunas. */
+    #modalCorpo .modal-tabela { table-layout: auto; min-width: 720px; }
+    #modalCorpo .modal-tabela th, #modalCorpo .modal-tabela td { width: auto !important; }
+  }
+
   .rodape-djen {
     margin-top: 2rem; padding: 1rem 1.2rem; border-top: 1px solid var(--borda);
     font-size: .76rem; color: var(--texto-muted); line-height: 1.6; text-align: center;
@@ -898,12 +933,20 @@
     <section class="secao">
       <div class="secao-titulo">Divergência entre o diário e o registro</div>
       <div class="secao-sub" id="subDivergencia">—</div>
+      <div class="filtro-linha">
+        <span class="filtro-rotulo">Planilha</span>
+        <div class="filtros">
+          <button type="button" class="chip" id="divergGravar">Gravar resultados na planilha</button>
+        </div>
+      </div>
+      <div class="secao-sub" id="gravacaoStatus" style="margin:0 0 .5rem 0">—</div>
+      <div class="secao-sub" id="avisoDiverg" style="margin:0 0 .8rem 0"></div>
       <div class="card">
         <div class="tabela-wrap">
           <table id="tabelaDivergencia">
             <thead><tr>
               <th>Data</th><th>Processo</th><th>Cliente</th><th>O diário publicou</th>
-              <th>A planilha registra</th><th>Confiança</th>
+              <th>A planilha registra</th><th>Confiança</th><th>Destino</th>
             </tr></thead>
             <tbody id="corpoDivergencia"></tbody>
           </table>
@@ -1041,7 +1084,7 @@
 
     <section class="secao">
       <div class="secao-titulo">Onde a tese ganha e onde ela para</div>
-      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa é o <b>índice de procedência</b>: só procedente, parcialmente procedente e improcedente entram no denominador, e parcial pesa meio ganho. <b>Extinção</b> (ext) e <b>acordo homologado</b> (acordo) aparecem na contagem e no total, mas ficam fora do índice — não houve julgamento do pedido. Com os números separados dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
+      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa é o <b>índice de procedência</b>: só procedente, parcialmente procedente e improcedente entram no denominador. Na sentença, <b>parcialmente procedente conta como procedente</b> — o pedido foi acolhido; no recurso, provimento parcial vale meio. <b>Extinção</b> (ext) e <b>acordo homologado</b> (acordo) aparecem na contagem e no total, mas ficam fora do índice — não houve julgamento do pedido. Com os números separados dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
       <div class="card"><div class="tabela-wrap"><div id="matrizProdutoFase"></div></div></div>
     </section>
 
@@ -1864,7 +1907,14 @@ function classificar(p) {
      julgado — chamar os três de "recurso" e tirar a média não orienta nenhum
      deles. Recurso sem classe identificável fica em "Outros recursos" em vez
      de ser adivinhado pelo texto. */
-  const fase = julgamento === 'Recurso' ? (recurso || 'Outros recursos') : julgamento;
+  /* Recurso inominado é a apelação do Juizado Especial: mesma função, devolve
+     o mérito inteiro ao colegiado. Como fase, são a mesma pergunta. A espécie
+     exata permanece em `recurso`, para a tabela de acórdãos e a exportação. */
+  const FASE_EQUIVALENTE = { 'Apelação': 'Apelação / Rec. inominado',
+                             'Recurso inominado': 'Apelação / Rec. inominado' };
+  const fase = julgamento === 'Recurso'
+    ? (FASE_EQUIVALENTE[recurso] || recurso || 'Outros recursos')
+    : julgamento;
 
   /* Dispositivo: só se afirma quando aparece escrito no texto. */
   const d = dispositivoDe(t, julgamento);
@@ -2235,7 +2285,7 @@ const ehDecisao = p => p.dispositivo && p.dispositivo !== 'Sem dispositivo' && !
 
 /* Ordem em que as fases aparecem: instrução, mérito, e os recursos do mais
    devolutivo para o menos. */
-const ORDEM_FASES = ['Liminar', 'Sentença', 'Apelação', 'Recurso inominado',
+const ORDEM_FASES = ['Liminar', 'Sentença', 'Apelação / Rec. inominado',
                      'Agravo de instrumento', 'Agravo interno', 'Agravo',
                      'Recurso especial/extraordinário', 'Embargos infringentes',
                      'Embargos de declaração', 'Outros recursos', 'Outros atos'];
@@ -2260,19 +2310,27 @@ const DISPOSITIVOS_LIMINAR  = ['Liminar deferida', 'Liminar indeferida'];
    êxito. */
 const FORA_DO_INDICE = ['Extinção do processo', 'Acordo homologado'];
 
-/* Placar: ganhos, parciais, perdas e o êxito sobre o mérito julgado. O êxito
-   conta parcial como meio ganho — parcialmente procedente não é derrota, mas
-   também não é a vitória que se vendeu ao cliente. */
+/* Peso do parcial no índice.
+
+   Na sentença, parcialmente procedente conta como procedente: o pedido foi
+   acolhido, e a extensão do acolhimento é outra discussão. No recurso o
+   provimento parcial vale meio — reformar um capítulo do acórdão não é ganhar
+   o recurso. */
+const PESO_PARCIAL = { 'Parcialmente procedente': 1, 'Recurso parcialmente provido': 0.5 };
+const pesoDe = disp => (PESO_PARCIAL[disp] === undefined ? 0.5 : PESO_PARCIAL[disp]);
+
+/* Placar: ganhos, parciais, perdas e o êxito sobre o mérito julgado. */
 function placar(itens) {
   const merito = itens.filter(p => FORA_DO_INDICE.indexOf(p.dispositivo) < 0);
   const g = merito.filter(p => p.resultado === 'Favorável').length;
-  const pa = merito.filter(p => p.resultado === 'Parcial').length;
+  const parc = merito.filter(p => p.resultado === 'Parcial');
   const pe = merito.filter(p => p.resultado === 'Desfavorável').length;
-  const base = g + pa + pe;
-  return { total: itens.length, ganhos: g, parciais: pa, perdas: pe,
+  const base = g + parc.length + pe;
+  const peso = parc.reduce((soma, p) => soma + pesoDe(p.dispositivo), 0);
+  return { total: itens.length, ganhos: g, parciais: parc.length, perdas: pe,
            extincoes: itens.filter(p => p.dispositivo === 'Extinção do processo').length,
            acordos: itens.filter(p => p.dispositivo === 'Acordo homologado').length,
-           exito: base ? (g + pa * 0.5) / base * 100 : null };
+           exito: base ? (g + peso) / base * 100 : null };
 }
 
 function agrupar(itens, chave) {
@@ -2505,7 +2563,7 @@ function renderSentencas(f) {
     itemResumo('Procedentes', num(por('Procedente').length),
       merito ? pct1(por('Procedente').length / merito * 100) + ' do mérito julgado' : 'sem mérito julgado', COR_VERDE),
     itemResumo('Parcialmente procedentes', num(por('Parcialmente procedente').length),
-      'ganho que não foi integral', COR_AMARELO),
+      'contam como procedentes no índice', COR_AMARELO),
     itemResumo('Improcedentes', num(por('Improcedente').length),
       merito ? pct1(por('Improcedente').length / merito * 100) + ' do mérito julgado' : '—', COR_VERMELHO),
     itemResumo('Extinção do processo', num(por('Extinção do processo').length),
@@ -3050,7 +3108,9 @@ function montarFiltroExec(todos) {
       redesenhar();
     };
   };
-  chipsExec('execJulg', ['Sentença', 'Apelação', 'Agravo', 'Outros recursos', 'Liminar'], FILTRO_EXEC.julg);
+  /* Sai dos dados: lista fixa fica desalinhada da classificação assim que ela
+     muda, e o chip passa a filtrar por um valor que não existe mais. */
+  chipsExec('execJulg', fasesPresentes(todos.map(l => l.pub)), FILTRO_EXEC.julg);
   chipsExec('execEstagio', ['Recebido', 'Em compensação', 'A solicitar',
     'Aguardando — recursal', 'Aguardando — conhecimento', 'Sem registro'], FILTRO_EXEC.estagios);
 
@@ -3157,13 +3217,116 @@ function renderCarteira(d) {
     [COR_VERDE, COR_VERMELHO, COR_AMARELO, COR_MUTED]);
 }
 
+/* Escrever na base autoritativa a partir de leitura heurística exige limiar:
+   um dispositivo lido a 55% é palpite, e palpite gravado vira dado falso que
+   ninguém mais questiona. Acima disto a leitura se sustenta sozinha. */
+const CONF_GRAVACAO = 80;
+
+/* Código compacto por dispositivo — o payload viaja na URL do Web App. */
+const COD_DISPOSITIVO = {
+  'Procedente': ['P', 'S'], 'Parcialmente procedente': ['R', 'S'],
+  'Improcedente': ['I', 'S'], 'Extinção do processo': ['E', 'S'],
+  'Acordo homologado': ['A', 'S'],
+  'Recurso provido': ['V', 'R'], 'Recurso parcialmente provido': ['W', 'R'],
+  'Recurso não provido': ['N', 'R']
+};
+
+const iso10 = d => d ? d.toISOString().slice(0, 10) : '';
+
+/* O que pode ser gravado: divergente, com código conhecido e confiança acima
+   do limiar. O resto fica na tabela, marcado, para decisão humana. */
+function gravaveis(f) {
+  return f.filter(p => divergencia(p) && COD_DISPOSITIVO[p.dispositivo] &&
+                       p.confianca >= CONF_GRAVACAO);
+}
+
+const JA_GRAVADOS = new Set();
+
+async function gravarResultados(automatico) {
+  const aviso = document.getElementById('avisoDiverg');
+  if (!webappConfigurado()) {
+    if (aviso && !automatico) aviso.textContent = 'Envio não configurado — use "Configurar envio" na seção acima.';
+    return;
+  }
+  const alvo = gravaveis(filtrar(BASE.pubs)).filter(p => !JA_GRAVADOS.has(p.id));
+  if (!alvo.length) {
+    if (aviso && !automatico) aviso.textContent = 'Nada acima do limiar para gravar.';
+    return;
+  }
+  if (aviso) aviso.textContent = 'Gravando ' + alvo.length + ' resultado(s) na planilha…';
+
+  const url = lerLS(LS_WEBAPP), tk = lerLS(LS_TOKEN);
+  let gravados = 0, retorno = null, cego = false;
+  /* Em lotes: o payload vai na URL, e URL longa demais é recusada em silêncio. */
+  for (let i = 0; i < alvo.length; i += 30) {
+    const lote = alvo.slice(i, i + 30);
+    const dados = lote.map(p => {
+      const [cod, tipo] = COD_DISPOSITIVO[p.dispositivo];
+      return [p.processoDigitos, cod, tipo, p.confianca, iso10(p.disp), p.hash || ''].join(':');
+    }).join('|');
+    const link = url + (url.indexOf('?') < 0 ? '?' : '&') +
+      'acao=resultado&token=' + encodeURIComponent(tk) + '&dados=' + encodeURIComponent(dados);
+    try {
+      const r = await fetch(link);
+      const j = await r.json();
+      retorno = j;
+      if (j && j.ok && j.resultado) gravados += j.resultado.gravados || 0;
+    } catch (e) {
+      try { await fetch(link, { mode: 'no-cors' }); cego = true; } catch (e2) {}
+    }
+    lote.forEach(p => JA_GRAVADOS.add(p.id));
+  }
+
+  if (!aviso) return;
+  if (cego)
+    aviso.innerHTML = '<b>' + num(alvo.length) + ' resultado(s) enviados</b> para a planilha. ' +
+      'O navegador não conseguiu ler a resposta do Apps Script (CORS) — confira a aba ' +
+      '<b>_ResultadosDJEN</b>, que registra cada gravação com o valor anterior.';
+  else if (retorno && retorno.ok)
+    aviso.innerHTML = '<b>' + num(gravados) + ' resultado(s) gravados</b> na Base geral' +
+      (retorno.resultado && retorno.resultado.jaPreenchidos
+        ? ' · ' + num(retorno.resultado.jaPreenchidos) + ' já tinham valor e não foram tocados' : '') +
+      (retorno.resultado && retorno.resultado.semCadastro
+        ? ' · ' + num(retorno.resultado.semCadastro) + ' sem processo na base' : '') +
+      '. Cada gravação fica registrada na aba <b>_ResultadosDJEN</b>.';
+  else
+    aviso.innerHTML = '<span style="color:var(--vermelho)">Não deu para gravar: ' +
+      esc((retorno && retorno.erro) || 'sem resposta') + '</span>';
+}
+
 function renderDivergencia(f) {
   const div = f.filter(p => divergencia(p))
     .sort((a, b) => (b.disp ? b.disp.getTime() : 0) - (a.disp ? a.disp.getTime() : 0));
+  const podem = gravaveis(f);
+  const retidas = div.length - podem.length;
   document.getElementById('subDivergencia').innerHTML = div.length
     ? '<b>' + num(div.length) + '</b> decisões saíram no diário e a planilha ainda não registrou. ' +
-      'Não é erro de leitura: é registro atrasado — e processo ganho sem registro é processo que não vira execução.'
+      'Não é erro de leitura: é registro atrasado — e processo ganho sem registro é processo que não vira execução. ' +
+      '<b>' + num(podem.length) + '</b> têm leitura de <b>' + CONF_GRAVACAO + '% ou mais</b> e são gravadas na ' +
+      'planilha automaticamente; as outras <b>' + num(retidas) + '</b> ficam aqui para conferência — ' +
+      'gravar um dispositivo lido a 55% seria transformar palpite em dado.'
     : 'Nenhuma divergência no recorte: tudo que saiu no diário já consta na planilha.';
+
+  const st = document.getElementById('gravacaoStatus');
+  if (st) st.innerHTML = webappConfigurado()
+    ? '<span style="color:var(--verde)">Gravação automática ligada</span> — o resultado acima do limiar vai para a coluna ' +
+      '<i>Resultado da Sentença</i> ou <i>Resultado do Recurso</i>, <b>só onde o campo ainda está vazio</b>. ' +
+      'Valor posto por pessoa nunca é sobrescrito, e cada gravação fica na aba <b>_ResultadosDJEN</b> com o valor anterior.'
+    : '<span style="color:var(--amarelo)">Gravação automática desligada.</span> Configure o envio na seção ' +
+      '<i>Processos fora da base</i> — é a mesma URL e o mesmo token.';
+
+  const bg = document.getElementById('divergGravar');
+  if (bg) {
+    bg.disabled = !webappConfigurado() || !podem.length;
+    if (!bg.dataset.pronto) {
+      bg.dataset.pronto = '1';
+      bg.addEventListener('click', () => gravarResultados(false));
+    }
+  }
+  if (webappConfigurado() && podem.length && !renderDivergencia._gravou) {
+    renderDivergencia._gravou = true;
+    gravarResultados(true);
+  }
   const vis = div.slice(0, 150);
   document.getElementById('corpoDivergencia').innerHTML = vis.length ? vis.map(p =>
     '<tr><td>' + dtBR(p.disp) + '</td>' +
@@ -3172,8 +3335,12 @@ function renderDivergencia(f) {
     '<td><span class="tag-pct ' + (p.resultado === 'Favorável' ? 'verde' : p.resultado === 'Desfavorável'
       ? 'vermelho' : 'amarelo') + '">' + esc(p.dispositivo) + '</span></td>' +
     '<td>' + esc(p.resSentenca || 'sem registro') + '</td>' +
-    '<td><span class="tag-pct ' + (p.confianca >= 80 ? 'verde' : 'amarelo') + '">' + p.confianca + '%</span></td></tr>'
-  ).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nada divergente.</td></tr>';
+    '<td><span class="tag-pct ' + (p.confianca >= CONF_GRAVACAO ? 'verde' : 'amarelo') + '">' +
+      p.confianca + '%</span></td>' +
+    '<td>' + (p.confianca >= CONF_GRAVACAO && COD_DISPOSITIVO[p.dispositivo]
+      ? '<span class="tag-pct verde">grava</span>'
+      : '<span class="tag-pct neutro">confere à mão</span>') + '</td></tr>'
+  ).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--texto-muted);padding:1.2rem">Nada divergente.</td></tr>';
   if (vis.length) tabelaClicavel('corpoDivergencia', vis, fichaPub);
 }
 
