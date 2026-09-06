@@ -520,14 +520,20 @@
   }
   #execEstagio .chip, #execJulg .chip { font-size: .76rem; }
 
-  table.calor.fases td { text-align: center; vertical-align: middle; padding: .6rem .55rem; }
-  table.calor.fases td:first-child { text-align: left; }
+  table.calor.fases td { text-align: center; vertical-align: middle; padding: .4rem .5rem; }
+  table.calor.fases td:first-child { text-align: left; white-space: normal; max-width: 150px; }
   .cel-fase .cel-nota {
-    margin-top: .25rem; font-size: .68rem; color: var(--texto-muted); white-space: nowrap;
+    margin-top: .15rem; font-size: .66rem; color: var(--texto-muted); white-space: nowrap;
   }
+  /* A leitura é o texto mais longo da linha e era ela que definia a altura:
+     oito linhas de texto empurravam a linha inteira para ~200px de altura,
+     com todas as outras células boiando no meio de espaço vazio. Limitada a
+     três linhas, com o texto completo no title de quem quiser ler inteiro. */
   .cel-leitura {
-    text-align: left !important; white-space: normal; max-width: 330px;
-    font-size: .76rem; line-height: 1.5; color: var(--texto-muted);
+    text-align: left !important; white-space: normal; max-width: 300px;
+    font-size: .72rem; line-height: 1.35; color: var(--texto-muted);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .cel-leitura b { color: var(--texto); }
   .cel-leitura .fraco { font-style: italic; opacity: .8; }
@@ -3906,11 +3912,13 @@ function renderCeo(d, f) {
       prods.map(([nome, itens]) => {
         const porFase = FASES.map(fa => itens.filter(p => p.fase === fa));
         const ger = placar(itens);
-        return '<tr><td style="white-space:normal;max-width:200px"><b>' + esc(nome) + '</b></td>' +
+        const leitura = leituraDoProduto(porFase, ger, FASES);
+        return '<tr><td><b>' + esc(nome) + '</b></td>' +
           porFase.map(cel).join('') +
           '<td class="cel-fase"><span class="tag-pct ' + classeExito(ger.exito) + '">' + pct1(ger.exito) +
           '</span>' + contagem(ger) + '</td>' +
-          '<td class="cel-leitura">' + leituraDoProduto(porFase, ger, FASES) + '</td></tr>';
+          '<td class="cel-leitura" title="' + esc(String(leitura).replace(/<[^>]*>/g, '')) +
+            '">' + leitura + '</td></tr>';
       }).join('') + '</tbody></table>';
 
   document.querySelectorAll('#matrizProdutoFase .cel-calor').forEach(c => {
