@@ -1084,7 +1084,7 @@
 
     <section class="secao">
       <div class="secao-titulo">Onde a tese ganha e onde ela para</div>
-      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa é o <b>índice de procedência</b>: só procedente, parcialmente procedente e improcedente entram no denominador. Na sentença, <b>parcialmente procedente conta como procedente</b> — o pedido foi acolhido; no recurso, provimento parcial vale meio. <b>Extinção</b> (ext) e <b>acordo homologado</b> (acordo) aparecem na contagem e no total, mas ficam fora do índice — não houve julgamento do pedido. Com os números separados dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
+      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa é o <b>índice de procedência</b>: só procedente e improcedente entram no denominador. <b>Procedência parcial é procedência</b> — o pedido foi acolhido, e a ficha registra que foi em parte. No recurso, provimento parcial continua categoria própria e vale meio. <b>Extinção</b> (ext) e <b>acordo homologado</b> (acordo) aparecem na contagem e no total, mas ficam fora do índice — não houve julgamento do pedido. Com os números separados dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
       <div class="card"><div class="tabela-wrap"><div id="matrizProdutoFase"></div></div></div>
     </section>
 
@@ -1777,15 +1777,20 @@ const REGRAS_DISPOSITIVO = [
   ['Procedente',                  /julg\w+\s+(?:totalmente\s+)?procedente|\bprocedentes?\s+os?\s+pedidos?|\bproced[êe]ncia\s+d[oa]s?\s+pedid|pedidos?\s+.{0,20}\bprocedentes?\b/i, 'Favorável'],
   ['Acordo homologado',           /homolog\w*\s+(?:o\s+|a\s+)?(?:acordo|transa[çc][ãa]o)|acordo\s+[^.]{0,30}homolog/i,  'Favorável'],
   ['Extinção do processo',        /extin[çc]\w+\s+d[oa]\s+(?:processo|feito)|julgo\s+extint|extingo\s+o\s+(?:processo|feito)|art\.?\s*485/i, 'Neutro'],
-  ['Recurso parcialmente provido',/parcial\s+provimento|provimento\s+parcial|provejo\s+parcialmente/i,                  'Parcial'],
-  ['Recurso não provido',         /nego\s+provimento|negar\s+provimento|improvido|desprovi|nego\s+seguimento|mantida\s+a\s+senten/i, 'Desfavorável'],
-  ['Recurso provido',             /\bdou\s+provimento|\bdar\s+provimento|d[êe]-se\s+provimento|provimento\s+ao\s+recurso|reformo\s+a\s+senten/i, 'Favorável'],
+  ['Recurso parcialmente provido',/parcial\s+provimento|provimento\s+parcial|provejo\s+parcialmente|acolho\s+(?:parcialmente|em\s+parte)\s+(?:os\s+)?embargos/i, 'Parcial'],
+  ['Recurso não provido',         /nego\s+provimento|negar\s+provimento|improvido|desprovi|nego\s+seguimento|mantida\s+a\s+senten|rejeito\s+(?:os\s+)?embargos|desacolho\s+(?:os\s+)?embargos/i, 'Desfavorável'],
+  ['Recurso provido',             /\bdou\s+provimento|\bdar\s+provimento|d[êe]-se\s+provimento|provimento\s+ao\s+recurso|reformo\s+a\s+senten|acolho\s+(?:os\s+)?embargos/i, 'Favorável'],
   /* "pedido" sozinho não serve: "defiro o pedido de dilação de prazo" e
      "defiro o pedido de gratuidade" não são liminar, e estavam entrando como
      resultado favorável. Exige-se a palavra que caracteriza a tutela. */
   ['Liminar deferida',            /\b(?:defiro|concedo)\s+(?:parcialmente\s+)?(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Favorável'],
   ['Liminar indeferida',          /\b(?:indefiro|denego)\s+(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Desfavorável']
 ];
+
+/* Dispositivo de embargos: o verbo decidindo os embargos, não a menção a eles.
+   "Cabem embargos de declaração no prazo de 5 dias" aparece no rodapé de quase
+   toda sentença — usar menção levaria a sentença inteira para a coluna errada. */
+const RE_DISP_EMBARGOS = /(?:acolho|rejeito|desacolho|conhe[çc]o|nego\s+provimento\s+a)o?s?\s+(?:parcialmente\s+|em\s+parte\s+)?(?:d?os\s+)?embargos\s+de\s+declara/i;
 
 /* Cada fase só admite os dispositivos que ela própria pode produzir. Isto é
    restrição, não ordem de preferência: uma sentença de primeiro grau que
@@ -1808,13 +1813,22 @@ const ORDEM_DISP = {
                'Extinção do processo', 'Recurso parcialmente provido', 'Recurso não provido',
                'Recurso provido', 'Liminar deferida', 'Liminar indeferida']
 };
+/* Procedência parcial é procedência: o pedido foi acolhido, e a extensão do
+   acolhimento é outra conversa. Vira um dispositivo só; que foi em parte fica
+   registrado em `parcial`, para a ficha e para o log da planilha. */
+const FUNDE_DISPOSITIVO = { 'Parcialmente procedente': 'Procedente' };
+
 function dispositivoDe(t, julgamento) {
   const ordem = ORDEM_DISP[julgamento] || ORDEM_DISP.padrao;
   for (const nome of ordem) {
     const r = REGRAS_DISPOSITIVO.find(x => x[0] === nome);
-    if (r && r[1].test(t)) return { dispositivo: r[0], resultado: r[2] };
+    if (!r || !r[1].test(t)) continue;
+    const fundido = FUNDE_DISPOSITIVO[r[0]];
+    return { dispositivo: fundido || r[0],
+             resultado: fundido ? 'Favorável' : r[2],
+             parcial: !!fundido };
   }
-  return { dispositivo: 'Sem dispositivo', resultado: 'Não aplicável' };
+  return { dispositivo: 'Sem dispositivo', resultado: 'Não aplicável', parcial: false };
 }
 
 /* ------------------------------------------------------------- valores
@@ -1895,8 +1909,18 @@ function classificar(p) {
      sentença recorrida escreve "sentença" em quase toda linha, e deixar o
      texto mandar aqui produzia "Sentença" dentro de agravo de instrumento. */
   const recurso = tipoRecursoDe(p.classe);
-  const segundoGrau = ehSegundoGrau(p);
-  const julgamento = ato === 'Decisão interlocutória' ? 'Liminar'
+
+  /* Embargos de declaração não julgam o pedido: integram o julgado, e o CPC
+     os arrola como recurso (art. 994, IV). Decididos pelo mesmo juiz em
+     primeiro grau, a classe processual continua sendo a da ação — por isso a
+     detecção é pelo dispositivo, e não pela classe nem por menção solta:
+     sentença cita "cabem embargos de declaração" no rodapé o tempo todo. */
+  const ehEmbargos = (!!recurso && /embargos/i.test(recurso)) ||
+    /embargos\s+de\s+declara/i.test(String(p.tipoDocumento || '')) ||
+    RE_DISP_EMBARGOS.test(p.texto || '');
+
+  const segundoGrau = ehSegundoGrau(p) || ehEmbargos;
+  const julgamento = (ato === 'Decisão interlocutória' && !ehEmbargos) ? 'Liminar'
                    : segundoGrau ? 'Recurso'
                    : ato === 'Sentença' ? 'Sentença'
                    : ato === 'Acórdão' ? 'Recurso'
@@ -1913,13 +1937,17 @@ function classificar(p) {
   const FASE_EQUIVALENTE = { 'Apelação': 'Apelação / Rec. inominado',
                              'Recurso inominado': 'Apelação / Rec. inominado' };
   const fase = julgamento === 'Recurso'
-    ? (FASE_EQUIVALENTE[recurso] || recurso || 'Outros recursos')
+    ? (ehEmbargos ? 'Embargos de declaração'
+                  : (FASE_EQUIVALENTE[recurso] || recurso || 'Outros recursos'))
     : julgamento;
 
   /* Dispositivo: só se afirma quando aparece escrito no texto. */
   const d = dispositivoDe(t, julgamento);
-  let resultado = d.resultado, detalhe = d.dispositivo === 'Sem dispositivo' ? '' : d.dispositivo;
+  let resultado = d.resultado;
+  let detalhe = d.dispositivo === 'Sem dispositivo' ? ''
+              : (d.parcial ? d.dispositivo + ' em parte' : d.dispositivo);
   let dispositivo = d.dispositivo;
+  const parcial = d.parcial;
   const transitou = /tr[âa]nsit\w+\s+em\s+julgado/i.test(t);
 
   let prazoDias = null, contagem = 'úteis';
@@ -1944,7 +1972,7 @@ function classificar(p) {
     dispositivo = 'Sem dispositivo';
     detalhe = 'sigiloso — leitura obrigatória nos autos';
   }
-  return { ato, julgamento, fase, recurso, segundoGrau, dispositivo, resultado, detalhe, transitou,
+  return { ato, julgamento, fase, recurso, segundoGrau, dispositivo, resultado, detalhe, parcial, transitou,
            prazoDias, contagem, exigePrazo,
            confianca: conf, temValor: semTexto ? false : temValor,
            valor: semTexto ? null : valor, valores, condenacao, semTexto };
@@ -2064,7 +2092,8 @@ function montarPub(it, oab) {
     julgamento: cls.julgamento, fase: cls.fase, recurso: cls.recurso, dispositivo: cls.dispositivo,
     grau: cls.julgamento === 'Sentença' ? '1º grau'
         : cls.julgamento === 'Recurso' ? '2º grau' : '—',
-    transitou: cls.transitou, valores: cls.valores, condenacao: cls.condenacao,
+    transitou: cls.transitou, parcial: cls.parcial,
+    valores: cls.valores, condenacao: cls.condenacao,
     prazoDias: cls.prazoDias, contagem: cls.contagem, exigePrazo: cls.exigePrazo,
     confianca: cls.confianca, temValor: cls.temValor, valor: cls.valor,
     semTexto: cls.semTexto,
@@ -2296,7 +2325,7 @@ const fasesPresentes = itens => {
   return out;
 };
 
-const DISPOSITIVOS_SENTENCA = ['Procedente', 'Parcialmente procedente', 'Improcedente',
+const DISPOSITIVOS_SENTENCA = ['Procedente', 'Improcedente',
                                'Acordo homologado', 'Extinção do processo'];
 const DISPOSITIVOS_RECURSO  = ['Recurso provido', 'Recurso parcialmente provido', 'Recurso não provido'];
 const DISPOSITIVOS_LIMINAR  = ['Liminar deferida', 'Liminar indeferida'];
@@ -2310,15 +2339,9 @@ const DISPOSITIVOS_LIMINAR  = ['Liminar deferida', 'Liminar indeferida'];
    êxito. */
 const FORA_DO_INDICE = ['Extinção do processo', 'Acordo homologado'];
 
-/* Peso do parcial no índice.
-
-   Na sentença, parcialmente procedente conta como procedente: o pedido foi
-   acolhido, e a extensão do acolhimento é outra discussão. No recurso o
-   provimento parcial vale meio — reformar um capítulo do acórdão não é ganhar
-   o recurso. */
-const PESO_PARCIAL = { 'Parcialmente procedente': 1, 'Recurso parcialmente provido': 0.5 };
-const pesoDe = disp => (PESO_PARCIAL[disp] === undefined ? 0.5 : PESO_PARCIAL[disp]);
-
+/* Na sentença não há mais parcial: procedência parcial é procedência e entra
+   como ganho inteiro. Sobra o provimento parcial do recurso, que vale meio —
+   reformar um capítulo do acórdão não é ganhar o recurso. */
 /* Placar: ganhos, parciais, perdas e o êxito sobre o mérito julgado. */
 function placar(itens) {
   const merito = itens.filter(p => FORA_DO_INDICE.indexOf(p.dispositivo) < 0);
@@ -2326,7 +2349,7 @@ function placar(itens) {
   const parc = merito.filter(p => p.resultado === 'Parcial');
   const pe = merito.filter(p => p.resultado === 'Desfavorável').length;
   const base = g + parc.length + pe;
-  const peso = parc.reduce((soma, p) => soma + pesoDe(p.dispositivo), 0);
+  const peso = parc.length * 0.5;
   return { total: itens.length, ganhos: g, parciais: parc.length, perdas: pe,
            extincoes: itens.filter(p => p.dispositivo === 'Extinção do processo').length,
            acordos: itens.filter(p => p.dispositivo === 'Acordo homologado').length,
@@ -2421,7 +2444,8 @@ function fichaPub(p) {
         { r: 'Julgamento', v: esc(p.julgamento) + (p.recurso ? ' — ' + esc(p.recurso) : '') },
         { r: 'Resultado', v: p.dispositivo === 'Sem dispositivo'
             ? '<span style="color:var(--texto-muted)">o texto não traz dispositivo</span>'
-            : '<b>' + esc(p.dispositivo) + '</b>' },
+            : '<b>' + esc(p.dispositivo) + '</b>' +
+              (p.parcial ? ' <span class="tag-pct amarelo">em parte</span>' : '') },
         { r: 'Condenação identificada', v: p.condenacao ? '<b>' + moeda(p.condenacao) + '</b>' : '—' },
         { r: 'Trânsito em julgado', v: p.transitou ? 'mencionado no texto' : 'não mencionado' },
         { r: 'Confiança da leitura', v: '<span class="tag-pct ' +
@@ -2556,14 +2580,14 @@ function ligarKPIsEm(container, mapa) {
 function renderSentencas(f) {
   const sent = f.filter(p => ehDecisao(p) && p.julgamento === 'Sentença');
   const por = d => sent.filter(p => p.dispositivo === d);
-  const merito = por('Procedente').length + por('Parcialmente procedente').length + por('Improcedente').length;
-  const proc = por('Procedente').length + por('Parcialmente procedente').length;
+  const merito = por('Procedente').length + por('Improcedente').length;
+  const proc = por('Procedente').length;
 
+  const emParte = sent.filter(p => p.dispositivo === 'Procedente' && p.parcial).length;
   document.getElementById('resumoSentenca').innerHTML = [
     itemResumo('Procedentes', num(por('Procedente').length),
-      merito ? pct1(por('Procedente').length / merito * 100) + ' do mérito julgado' : 'sem mérito julgado', COR_VERDE),
-    itemResumo('Parcialmente procedentes', num(por('Parcialmente procedente').length),
-      'contam como procedentes no índice', COR_AMARELO),
+      (merito ? pct1(por('Procedente').length / merito * 100) + ' do mérito julgado' : 'sem mérito julgado') +
+      (emParte ? ' · <b>' + num(emParte) + '</b> em parte' : ''), COR_VERDE),
     itemResumo('Improcedentes', num(por('Improcedente').length),
       merito ? pct1(por('Improcedente').length / merito * 100) + ' do mérito julgado' : '—', COR_VERMELHO),
     itemResumo('Extinção do processo', num(por('Extinção do processo').length),
@@ -3224,7 +3248,7 @@ const CONF_GRAVACAO = 80;
 
 /* Código compacto por dispositivo — o payload viaja na URL do Web App. */
 const COD_DISPOSITIVO = {
-  'Procedente': ['P', 'S'], 'Parcialmente procedente': ['R', 'S'],
+  'Procedente': ['P', 'S'],
   'Improcedente': ['I', 'S'], 'Extinção do processo': ['E', 'S'],
   'Acordo homologado': ['A', 'S'],
   'Recurso provido': ['V', 'R'], 'Recurso parcialmente provido': ['W', 'R'],
@@ -3261,7 +3285,10 @@ async function gravarResultados(automatico) {
   for (let i = 0; i < alvo.length; i += 30) {
     const lote = alvo.slice(i, i + 30);
     const dados = lote.map(p => {
-      const [cod, tipo] = COD_DISPOSITIVO[p.dispositivo];
+      /* Grava "Procedência" nos dois casos, mas o código distingue para o log
+         da planilha não perder que a procedência foi parcial. */
+      const [cod, tipo] = (p.parcial && p.dispositivo === 'Procedente')
+        ? ['R', 'S'] : COD_DISPOSITIVO[p.dispositivo];
       return [p.processoDigitos, cod, tipo, p.confianca, iso10(p.disp), p.hash || ''].join(':');
     }).join('|');
     const link = url + (url.indexOf('?') < 0 ? '?' : '&') +
@@ -3904,7 +3931,7 @@ function montarControles(d) {
     fasesPresentes(pubs).map(j => ({ v: j, r: j, n: contarSem(pubs, 'julgamentos', j) })),
     FILTRO.julgamentos, () => desenhar());
 
-  const ordemDisp = ['Procedente', 'Parcialmente procedente', 'Improcedente', 'Acordo homologado',
+  const ordemDisp = ['Procedente', 'Improcedente', 'Acordo homologado',
                      'Extinção do processo', 'Recurso provido', 'Recurso parcialmente provido',
                      'Recurso não provido', 'Liminar deferida', 'Liminar indeferida', 'Sem dispositivo'];
   chips('filtrosDispositivo',
@@ -4015,6 +4042,7 @@ const COLUNAS_REL = {
     ['recurso', 'Espécie de recurso', p => p.recurso || '', false],
     ['grau', 'Grau', p => p.grau, true],
     ['dispositivo', 'Resultado', p => p.dispositivo, true],
+    ['parcial', 'Procedência em parte', p => p.parcial ? 'sim' : 'não', false],
     ['resultado', 'Favorável/Desfavorável', p => p.resultado, false],
     ['condenacao', 'Condenação identificada', p => p.condenacao || '', true],
     ['transito', 'Trânsito mencionado', p => p.transitou ? 'sim' : 'não', true],
