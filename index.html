@@ -1852,6 +1852,13 @@ function classificar(p) {
                    : ato === 'Acórdão' ? 'Recurso'
                    : 'Outros atos';
 
+  /* Fase em espécie. Apelação devolve o mérito inteiro, agravo de instrumento
+     decide uma questão incidental e embargos de declaração só integram o
+     julgado — chamar os três de "recurso" e tirar a média não orienta nenhum
+     deles. Recurso sem classe identificável fica em "Outros recursos" em vez
+     de ser adivinhado pelo texto. */
+  const fase = julgamento === 'Recurso' ? (recurso || 'Outros recursos') : julgamento;
+
   /* Dispositivo: só se afirma quando aparece escrito no texto. */
   const d = dispositivoDe(t, julgamento);
   let resultado = d.resultado, detalhe = d.dispositivo === 'Sem dispositivo' ? '' : d.dispositivo;
@@ -1880,7 +1887,7 @@ function classificar(p) {
     dispositivo = 'Sem dispositivo';
     detalhe = 'sigiloso — leitura obrigatória nos autos';
   }
-  return { ato, julgamento, recurso, segundoGrau, dispositivo, resultado, detalhe, transitou,
+  return { ato, julgamento, fase, recurso, segundoGrau, dispositivo, resultado, detalhe, transitou,
            prazoDias, contagem, exigePrazo,
            confianca: conf, temValor: semTexto ? false : temValor,
            valor: semTexto ? null : valor, valores, condenacao, semTexto };
@@ -1997,7 +2004,7 @@ function montarPub(it, oab) {
     dispTxt: String(it.data_disponibilizacao || ''),
     disp: d.disp, pub: d.pub, inicioPrazo: d.inicio, fatal: d.fatal,
     ato: cls.ato, resultado: cls.resultado, detalhe: cls.detalhe,
-    julgamento: cls.julgamento, recurso: cls.recurso, dispositivo: cls.dispositivo,
+    julgamento: cls.julgamento, fase: cls.fase, recurso: cls.recurso, dispositivo: cls.dispositivo,
     grau: cls.julgamento === 'Sentença' ? '1º grau'
         : cls.julgamento === 'Recurso' ? '2º grau' : '—',
     transitou: cls.transitou, valores: cls.valores, condenacao: cls.condenacao,
@@ -2204,7 +2211,7 @@ function filtrar(pubs) {
   return pubs.filter(p => {
     if (FILTRO.tribunais.size && !FILTRO.tribunais.has(p.tribunal)) return false;
     if (FILTRO.tipos.size && !FILTRO.tipos.has(p.ato)) return false;
-    if (FILTRO.julgamentos.size && !FILTRO.julgamentos.has(p.julgamento)) return false;
+    if (FILTRO.julgamentos.size && !FILTRO.julgamentos.has(p.fase)) return false;
     if (FILTRO.dispositivos.size && !FILTRO.dispositivos.has(p.dispositivo)) return false;
     if (FILTRO.produtos.size && !FILTRO.produtos.has(p.produto)) return false;
     if (q && !casaBusca(FILTRO.busca, p.processo, p.cliente, p.autor, p.reu,
@@ -2218,6 +2225,19 @@ function filtrar(pubs) {
    toda a análise de resultado: sem dispositivo não há o que contar, e contar
    assim mesmo transformaria "não deu para ler" em derrota. */
 const ehDecisao = p => p.dispositivo && p.dispositivo !== 'Sem dispositivo' && !p.cancelada;
+
+/* Ordem em que as fases aparecem: instrução, mérito, e os recursos do mais
+   devolutivo para o menos. */
+const ORDEM_FASES = ['Liminar', 'Sentença', 'Apelação', 'Recurso inominado',
+                     'Agravo de instrumento', 'Agravo interno', 'Agravo',
+                     'Recurso especial/extraordinário', 'Embargos infringentes',
+                     'Embargos de declaração', 'Outros recursos', 'Outros atos'];
+const fasesPresentes = itens => {
+  const tem = new Set(itens.map(p => p.fase));
+  const out = ORDEM_FASES.filter(f => tem.has(f));
+  [...tem].forEach(f => { if (out.indexOf(f) < 0) out.push(f); });
+  return out;
+};
 
 const DISPOSITIVOS_SENTENCA = ['Procedente', 'Parcialmente procedente', 'Improcedente',
                                'Acordo homologado', 'Extinção do processo'];
@@ -2559,17 +2579,17 @@ function renderLiminares(f) {
    liminar, tudo numa tabela só. */
 function renderMatrizJulg(f) {
   const dec = f.filter(ehDecisao);
-  const julgs = ['Sentença', 'Recurso', 'Liminar', 'Outros atos'];
+  const julgs = fasesPresentes(dec);
   const disps = [...new Set(dec.map(p => p.dispositivo))]
     .sort((a, b) => dec.filter(p => p.dispositivo === b).length - dec.filter(p => p.dispositivo === a).length);
-  const cel = (j, d) => dec.filter(p => p.julgamento === j && p.dispositivo === d).length;
+  const cel = (j, d) => dec.filter(p => p.fase === j && p.dispositivo === d).length;
   const max = Math.max(1, ...julgs.flatMap(j => disps.map(d => cel(j, d))));
 
   document.getElementById('matrizJulg').innerHTML = !dec.length
     ? '<div class="sem-vazio">Nenhuma decisão com dispositivo legível no recorte.</div>'
     : '<table class="calor"><thead><tr><th>Julgamento</th>' +
       disps.map(d => '<th>' + esc(d) + '</th>').join('') + '<th>Total</th></tr></thead><tbody>' +
-      julgs.filter(j => dec.some(p => p.julgamento === j)).map(j =>
+      julgs.map(j =>
         '<tr><td><b>' + esc(j) + '</b></td>' +
         disps.map(d => {
           const v = cel(j, d);
@@ -2577,12 +2597,12 @@ function renderMatrizJulg(f) {
             ' style="background:rgba(59,130,246,' + (0.05 + (v / max) * 0.7).toFixed(3) + ')">' +
             (v || '') + '</td>';
         }).join('') +
-        '<td><b>' + num(dec.filter(p => p.julgamento === j).length) + '</b></td></tr>').join('') +
+        '<td><b>' + num(dec.filter(p => p.fase === j).length) + '</b></td></tr>').join('') +
       '</tbody></table>';
 
   document.querySelectorAll('#matrizJulg .cel-calor').forEach(c => {
     c.onclick = () => {
-      const itens = dec.filter(p => p.julgamento === c.dataset.j && p.dispositivo === c.dataset.d);
+      const itens = dec.filter(p => p.fase === c.dataset.j && p.dispositivo === c.dataset.d);
       if (itens.length) listaPubs(c.dataset.d + ' — ' + c.dataset.j, itens);
     };
   });
@@ -2840,16 +2860,7 @@ const FILTRO_EXEC = { busca: '', minimo: 0, soTransito: false,
 
 /* Rótulo de julgamento usado no filtro deste painel: apelação e agravo são
    perguntas separadas, "recurso" como bloco único não serve aqui. */
-function faixaJulg(p) {
-  if (p.julgamento === 'Sentença') return 'Sentença';
-  if (p.julgamento === 'Liminar') return 'Liminar';
-  if (p.julgamento === 'Recurso') {
-    if (p.recurso === 'Apelação') return 'Apelação';
-    if (p.recurso && /agravo/i.test(p.recurso)) return 'Agravo';
-    return 'Outros recursos';
-  }
-  return 'Outros atos';
-}
+function faixaJulg(p) { return p.fase || 'Outros atos'; }
 
 function aplicarFiltroExec(linhas) {
   const q = chaveBusca(FILTRO_EXEC.busca || '');
@@ -3491,8 +3502,16 @@ function contagem(g) {
     '<b style="color:var(--vermelho)">' + num(g.perdas) + '</b> contra</div>';
 }
 
-function leituraDoProduto(porFase, geral) {
-  const [lim, sen, rec] = porFase;
+function leituraDoProduto(porFase, geral, fases) {
+  const acha = nome => porFase[(fases || []).indexOf(nome)] || [];
+  const lim = acha('Liminar');
+  const sen = acha('Sentença');
+  /* Para a leitura, os recursos voltam a ser um conjunto: a pergunta aqui é se
+     o tribunal corrige o primeiro grau, não qual recurso corrige. */
+  const rec = porFase.filter((_, i) => {
+    const f = (fases || [])[i];
+    return f && f !== 'Liminar' && f !== 'Sentença';
+  }).reduce((a, b) => a.concat(b), []);
   const MIN = 5;
   const t = arr => (arr.length >= MIN ? placar(arr).exito : null);
   const eL = t(lim), eS = t(sen), eR = t(rec);
@@ -3567,7 +3586,11 @@ function renderCeo(d, f) {
   /* Produto × fase, no formato do Controle de Publicações: taxa, favoráveis e
      contrárias por célula, total e a leitura do padrão. A comparação entre as
      fases é o que orienta providência — a taxa geral sozinha não orienta. */
-  const FASES = ['Liminar', 'Sentença', 'Recurso'];
+  /* 'Outros atos' entra como coluna: sem ela o Total não fecha com a soma das
+     demais, e uma tabela cujo total não reconcilia pede fé em vez de deixar
+     conferir. São decisões com dispositivo que não são liminar, sentença nem
+     recurso — homologação em despacho, decisão em cumprimento de sentença. */
+  const FASES = fasesPresentes(dec);
   const prods = [...agrupar(dec, p => p.produto).entries()]
     .sort((a, b) => b[1].length - a[1].length);
 
@@ -3575,7 +3598,7 @@ function renderCeo(d, f) {
     if (!itens.length) return '<td class="cel-fase">—</td>';
     const g = placar(itens);
     return '<td class="cel-fase cel-calor" data-p="' + esc(itens[0].produto) + '" data-f="' +
-      esc(itens[0].julgamento) + '">' +
+      esc(itens[0].fase) + '">' +
       '<span class="tag-pct ' + classeExito(g.exito) + '">' + pct1(g.exito) + '</span>' +
       contagem(g) + '</td>';
   };
@@ -3586,18 +3609,18 @@ function renderCeo(d, f) {
       FASES.map(x => '<th>' + x + '</th>').join('') +
       '<th>Total</th><th style="text-align:left">Leitura</th></tr></thead><tbody>' +
       prods.map(([nome, itens]) => {
-        const porFase = FASES.map(fa => itens.filter(p => p.julgamento === fa));
+        const porFase = FASES.map(fa => itens.filter(p => p.fase === fa));
         const ger = placar(itens);
         return '<tr><td style="white-space:normal;max-width:200px"><b>' + esc(nome) + '</b></td>' +
           porFase.map(cel).join('') +
           '<td class="cel-fase"><span class="tag-pct ' + classeExito(ger.exito) + '">' + pct1(ger.exito) +
           '</span>' + contagem(ger) + '</td>' +
-          '<td class="cel-leitura">' + leituraDoProduto(porFase, ger) + '</td></tr>';
+          '<td class="cel-leitura">' + leituraDoProduto(porFase, ger, FASES) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
   document.querySelectorAll('#matrizProdutoFase .cel-calor').forEach(c => {
     c.onclick = () => {
-      const itens = dec.filter(p => p.produto === c.dataset.p && p.julgamento === c.dataset.f);
+      const itens = dec.filter(p => p.produto === c.dataset.p && p.fase === c.dataset.f);
       if (itens.length) listaPubs(c.dataset.p + ' — ' + c.dataset.f, itens);
     };
   });
@@ -3671,7 +3694,7 @@ function contarSem(pubs, dimensao, valor) {
   const guarda = FILTRO[dimensao];
   FILTRO[dimensao] = new Set();
   const n = filtrar(pubs).filter(p => {
-    if (dimensao === 'julgamentos') return p.julgamento === valor;
+    if (dimensao === 'julgamentos') return p.fase === valor;
     if (dimensao === 'dispositivos') return p.dispositivo === valor;
     if (dimensao === 'produtos') return p.produto === valor;
     if (dimensao === 'tribunais') return p.tribunal === valor;
@@ -3685,10 +3708,11 @@ function contarSem(pubs, dimensao, valor) {
 function montarControles(d) {
   const pubs = d.pubs;
 
+  /* Uma opção por espécie: apelação, agravo de instrumento, recurso inominado
+     e embargos são perguntas diferentes, e "Recurso" como bloco único não
+     deixa fazer nenhuma delas. */
   chips('filtrosJulgamento',
-    ['Sentença', 'Recurso', 'Liminar', 'Outros atos']
-      .filter(j => pubs.some(p => p.julgamento === j))
-      .map(j => ({ v: j, r: j, n: contarSem(pubs, 'julgamentos', j) })),
+    fasesPresentes(pubs).map(j => ({ v: j, r: j, n: contarSem(pubs, 'julgamentos', j) })),
     FILTRO.julgamentos, () => desenhar());
 
   const ordemDisp = ['Procedente', 'Parcialmente procedente', 'Improcedente', 'Acordo homologado',
@@ -3798,7 +3822,9 @@ const COLUNAS_REL = {
     ['orgao', 'Órgão julgador', p => p.orgao, false],
     ['ato', 'Tipo de ato', p => p.ato, true],
     ['julgamento', 'Julgamento', p => p.julgamento, true],
-    ['recurso', 'Espécie de recurso', p => p.recurso || '', true],
+    ['fase', 'Fase (espécie)', p => p.fase, true],
+    ['recurso', 'Espécie de recurso', p => p.recurso || '', false],
+    ['grau', 'Grau', p => p.grau, true],
     ['dispositivo', 'Resultado', p => p.dispositivo, true],
     ['resultado', 'Favorável/Desfavorável', p => p.resultado, false],
     ['condenacao', 'Condenação identificada', p => p.condenacao || '', true],
