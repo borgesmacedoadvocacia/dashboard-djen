@@ -4000,6 +4000,18 @@ function contarSem(pubs, dimensao, valor) {
   return n;
 }
 
+/* Trocar o período refaz a coleta, e 12 meses passam de dois minutos. Sem
+   voltar para a tela de carregamento, o painel segue exibindo os números do
+   período anterior enquanto isso — quem clicou conclui que não funcionou, e a
+   leitura que está na tela não é a do recorte pedido. */
+function recarregarComAviso() {
+  const carregando = document.getElementById('carregando');
+  const conteudo = document.getElementById('conteudo');
+  if (carregando) carregando.classList.remove('oculto');
+  if (conteudo) conteudo.classList.add('oculto');
+  carregarDados();
+}
+
 function montarControles(d) {
   const pubs = d.pubs;
 
@@ -4043,7 +4055,7 @@ function montarControles(d) {
   chips('filtrosOab',
     OABS.map(o => ({ v: o.chave, r: o.rotulo,
       n: pubs.filter(p => p.oabs.indexOf(o.chave) >= 0).length })),
-    FILTRO.oabs, () => carregarDados());
+    FILTRO.oabs, () => recarregarComAviso());
 
   if (controlesProntos) return;
   controlesProntos = true;
@@ -4055,7 +4067,7 @@ function montarControles(d) {
     FILTRO.preset = b.dataset.preset;
     document.getElementById('dtIni').value = '';
     document.getElementById('dtFim').value = '';
-    carregarDados();
+    recarregarComAviso();
   });
 
   document.getElementById('btnPeriodo').onclick = () => {
@@ -4063,7 +4075,7 @@ function montarControles(d) {
     if (!i || !f) return;
     FILTRO.preset = 'custom'; FILTRO.ini = i; FILTRO.fim = f;
     document.querySelectorAll('#filtrosPeriodo .chip[data-preset]').forEach(c => c.classList.remove('ativo'));
-    carregarDados();
+    recarregarComAviso();
   };
 
   ligarBusca('buscaCampo', t => { FILTRO.busca = t; desenhar(); });
