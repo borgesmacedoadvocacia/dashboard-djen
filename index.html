@@ -4357,10 +4357,20 @@ function render(dados) {
    ========================================================================= */
 let DADOS = null;
 
+/* Cada carga leva um número; ao voltar, só desenha se ainda for a mais
+   recente. Sem isso, uma carga antiga que termina depois reescreve a tela com
+   o recorte que o usuário já trocou — e quanto mais demorada a busca, mais
+   provável isso é. */
+let GERACAO_CARGA = 0;
+let ULTIMA_CONCLUIDA = 0;
+
 async function carregarDados() {
   const erroEl = document.getElementById('erroBox');
+  const minhaGeracao = ++GERACAO_CARGA;
   try {
-    DADOS = await buscarTudo();
+    const dados = await buscarTudo();
+    if (minhaGeracao !== GERACAO_CARGA) return;   // outra carga começou depois
+    DADOS = dados;
     const idLink = CONFIG.SHEET_ID ||
       (CONFIG.SHEETS ? Object.values(CONFIG.SHEETS)[0] : null);
     const linkEl = document.getElementById('linkPlanilha');
@@ -4372,7 +4382,9 @@ async function carregarDados() {
     document.getElementById('atualizadoEm').textContent =
       'Atualizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     render(DADOS);
+    ULTIMA_CONCLUIDA = minhaGeracao;
   } catch (e) {
+    if (minhaGeracao !== GERACAO_CARGA) return;   // falha de carga já superada
     console.error(e);
     document.getElementById('carregando').classList.add('oculto');
     erroEl.classList.remove('oculto');
@@ -4383,7 +4395,13 @@ async function carregarDados() {
 }
 
 document.getElementById('btnAtualizar').addEventListener('click', carregarDados);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && DADOS) carregarDados(); });
+/* Voltar para a aba não pode empilhar carga sobre carga em andamento: numa
+   busca longa isso multiplicava chamadas à fonte sem trazer nada de novo. */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !DADOS) return;
+  if (GERACAO_CARGA !== ULTIMA_CONCLUIDA) return;   // ainda carregando
+  carregarDados();
+});
 setInterval(() => { if (DADOS) carregarDados(); }, CONFIG.AUTO_REFRESH_MIN * 60 * 1000);
 
 const CHAVE_SESSAO = 'dashboard-djen_sessao';
