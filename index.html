@@ -2000,6 +2000,13 @@ function janelaAtual() {
   return { ini: iso(ini), fim: iso(fim) };
 }
 
+/* O DJEN devolve 504 de forma intermitente: numa medição daqui, a página 3
+   falhou e a 4 respondeu em meio segundo. Repetir resolve; desistir na primeira
+   falha descartava o resto da paginação. Só se repete o que pode melhorar —
+   5xx, 429 e falha de rede. Um 4xx não se conserta esperando. */
+const TENTATIVAS_DJEN = 4;
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+
 async function chamarDJEN(oab, ini, fim, pagina) {
   const p = new URLSearchParams({
     numeroOab: oab.n, ufOab: oab.uf,
@@ -2007,17 +2014,25 @@ async function chamarDJEN(oab, ini, fim, pagina) {
     pagina: String(pagina), itensPorPagina: '50'   // acima de 50 a API devolve items vazio
   });
   const t0 = Date.now();
-  try {
-    const r = await fetch(API_DJEN + '?' + p, { cache: 'no-store' });
-    const corpo = r.ok ? await r.json() : null;
-    return { ok: r.ok, http: r.status, ms: Date.now() - t0,
-             count: corpo ? corpo.count : 0, itens: (corpo && corpo.items) || [] };
-  } catch (e) {
-    return { ok: false, http: 0, ms: Date.now() - t0, count: 0, itens: [], erro: e.message };
-  }
-}
+  let ultimo = { ok: false, http: 0, count: 0, itens: [], erro: 'sem resposta' };
 
-const esperar = ms => new Promise(r => setTimeout(r, ms));
+  for (let tent = 1; tent <= TENTATIVAS_DJEN; tent++) {
+    try {
+      const r = await fetch(API_DJEN + '?' + p, { cache: 'no-store' });
+      if (r.ok) {
+        const corpo = await r.json();
+        return { ok: true, http: r.status, ms: Date.now() - t0, tentativas: tent,
+                 count: corpo ? corpo.count : 0, itens: (corpo && corpo.items) || [] };
+      }
+      ultimo = { ok: false, http: r.status, count: 0, itens: [], erro: 'HTTP ' + r.status };
+      if (r.status < 500 && r.status !== 429) break;   // 4xx não melhora com espera
+    } catch (e) {
+      ultimo = { ok: false, http: 0, count: 0, itens: [], erro: e.message };
+    }
+    if (tent < TENTATIVAS_DJEN) await esperar(700 * tent);
+  }
+  return Object.assign(ultimo, { ms: Date.now() - t0, tentativas: TENTATIVAS_DJEN });
+}
 
 async function coletar(ini, fim, aoProgredir) {
   const porId = new Map();          // deduplicação por id_djen, nunca por OAB
@@ -2025,20 +2040,29 @@ async function coletar(ini, fim, aoProgredir) {
 
   for (const oab of OABS) {
     if (!FILTRO.oabs.has(oab.chave)) continue;
-    const reg = { chave: oab.chave, rotulo: oab.rotulo, http: null, count: 0, novos: 0, paginas: 0, ms: 0 };
+    const reg = { chave: oab.chave, rotulo: oab.rotulo, http: null, count: 0,
+                  novos: 0, paginas: 0, paginasEsperadas: 0, falhas: 0, ms: 0 };
 
     const primeira = await chamarDJEN(oab, ini, fim, 1);
     reg.http = primeira.http; reg.count = primeira.count; reg.ms += primeira.ms;
-    if (!primeira.ok) { reg.erro = primeira.erro || ('HTTP ' + primeira.http); coleta.erros++; }
+    if (!primeira.ok) { reg.erro = primeira.erro || ('HTTP ' + primeira.http); reg.falhas++; coleta.erros++; }
 
     const paginas = Math.max(1, Math.ceil((primeira.count || 0) / 50));
+    reg.paginasEsperadas = paginas;
     let lote = primeira.itens;
     for (let pg = 1; pg <= paginas; pg++) {
       if (pg > 1) {
         await esperar(450);                    // rajada gera 500 e furo silencioso
         const r = await chamarDJEN(oab, ini, fim, pg);
         reg.ms += r.ms; lote = r.itens;
-        if (!r.ok) { coleta.erros++; break; }
+        /* Página que falhou depois das repetições não interrompe as demais:
+           perder 50 publicações é muito melhor que perder as 4.700 seguintes,
+           que era o que o break fazia. */
+        if (!r.ok) {
+          reg.falhas++; coleta.erros++;
+          reg.erro = reg.falhas + ' página(s) sem resposta (' + (r.erro || 'HTTP ' + r.http) + ')';
+          continue;
+        }
       }
       reg.paginas++; coleta.paginas++;
       for (const it of lote) {
@@ -3691,16 +3715,40 @@ function renderColeta(d) {
   document.getElementById('corpoColeta').innerHTML = c.oabs.map(o =>
     '<tr><td><b>' + esc(o.rotulo) + '</b></td>' +
     '<td><span class="tag-pct ' + (o.http === 200 ? 'verde' : 'vermelho') + '">' + o.http + '</span></td>' +
-    '<td>' + num(o.total) + '</td><td>' + num(o.novos) + '</td><td>' + o.paginas + '</td>' +
+    '<td>' + num(o.count) + '</td><td>' + num(o.novos) + '</td>' +
+    '<td>' + o.paginas + (o.paginasEsperadas && o.paginas < o.paginasEsperadas
+      ? ' <span class="tag-pct vermelho">de ' + o.paginasEsperadas + '</span>' : '') + '</td>' +
     '<td>' + (o.ms / 1000).toFixed(1) + 's</td>' +
     '<td style="white-space:normal;max-width:320px;color:var(--texto-muted)">' + esc(o.leitura) + '</td></tr>'
   ).join('');
 
+  avisarColeta(d);
+}
+
+/* A tarja vivia dentro de renderColeta, que só roda na aba Carteira: quem
+   estivesse em Resultados ou Valores a executar via número incompleto sem
+   nenhum sinal. Agora é avaliada a cada desenho, em qualquer aba, e diz
+   QUANTO faltou — saber que falhou não basta para julgar se o número serve. */
+function avisarColeta(d) {
   const tarja = document.getElementById('tarjaColeta');
-  tarja.classList.toggle('oculto', !erros);
-  if (erros) tarja.innerHTML = '<b>A coleta falhou em ' + num(erros) + ' inscrição(ões).</b> ' +
-    'Enquanto isso não se resolver, ausência de publicação não significa ausência de movimento — ' +
-    'e nenhum indicador desta tela é confiável.';
+  if (!tarja) return;
+  const oabs = d.coleta.oabs;
+  const incompletas = oabs.filter(o => o.falhas > 0 ||
+    (o.paginasEsperadas && o.paginas < o.paginasEsperadas));
+  if (!incompletas.length) { tarja.classList.add('oculto'); return; }
+
+  const faltando = incompletas.reduce(
+    (s, o) => s + Math.max(0, (o.paginasEsperadas || 0) - (o.paginas || 0)), 0) * 50;
+  const esperado = oabs.reduce((s, o) => s + (o.count || 0), 0);
+
+  tarja.classList.remove('oculto');
+  tarja.innerHTML = '<b>Coleta incompleta.</b> ' +
+    incompletas.map(o => esc(o.rotulo) + ' trouxe <b>' + num(o.paginas) + '</b> de <b>' +
+      num(o.paginasEsperadas) + '</b> páginas').join(' · ') +
+    ' — faltam cerca de <b>' + num(faltando) + '</b> publicações de <b>' + num(esperado) + '</b>. ' +
+    'O DJEN devolve 504 de forma intermitente; o painel repete cada página até quatro vezes, ' +
+    'e o que sobra aqui não foi recuperado. <b>Clique em Atualizar para completar</b> — ' +
+    'enquanto faltar, todo número desta tela está subestimado.';
 }
 
 /* ===================================================================== CEO */
@@ -4236,6 +4284,9 @@ function renderResumoFiltro(d, f) {
 function desenhar() {
   const f = filtrar(BASE.pubs);
   renderResumoFiltro(BASE, f);
+  /* Fora de qualquer aba: coleta incompleta invalida todo número da tela, não
+     só os da aba onde a saúde da coleta é exibida. */
+  avisarColeta(BASE);
   if (FILTRO.aba === 'resultados') {
     renderKPIsResultado(f);
     renderSentencas(f);
