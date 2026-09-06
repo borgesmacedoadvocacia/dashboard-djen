@@ -2041,7 +2041,8 @@ async function coletar(ini, fim, aoProgredir) {
   for (const oab of OABS) {
     if (!FILTRO.oabs.has(oab.chave)) continue;
     const reg = { chave: oab.chave, rotulo: oab.rotulo, http: null, count: 0,
-                  novos: 0, paginas: 0, paginasEsperadas: 0, falhas: 0, ms: 0 };
+                  novos: 0, paginas: 0, paginasEsperadas: 0, falhas: 0, ms: 0,
+                  pendentes: [] };
 
     const primeira = await chamarDJEN(oab, ini, fim, 1);
     reg.http = primeira.http; reg.count = primeira.count; reg.ms += primeira.ms;
@@ -2060,6 +2061,7 @@ async function coletar(ini, fim, aoProgredir) {
            que era o que o break fazia. */
         if (!r.ok) {
           reg.falhas++; coleta.erros++;
+          reg.pendentes.push(pg);
           reg.erro = reg.falhas + ' página(s) sem resposta (' + (r.erro || 'HTTP ' + r.http) + ')';
           continue;
         }
@@ -2077,6 +2079,35 @@ async function coletar(ini, fim, aoProgredir) {
       }
       if (aoProgredir) aoProgredir(oab.rotulo, reg.paginas, paginas, porId.size);
     }
+    /* Repescagem: as falhas do DJEN duram segundos, e a mesma página costuma
+       responder normalmente logo depois. Duas chamadas a mais custam pouco
+       perto de 57, e fecham o buraco na maioria das vezes. */
+    if (reg.pendentes.length) {
+      const aindaFalta = [];
+      for (const pg of reg.pendentes) {
+        await esperar(1200);
+        const r = await chamarDJEN(oab, ini, fim, pg);
+        reg.ms += r.ms;
+        if (!r.ok) { aindaFalta.push(pg); continue; }
+        reg.paginas++; coleta.paginas++; reg.falhas--; coleta.erros--;
+        for (const it of r.itens) {
+          const id = String(it.id);
+          if (porId.has(id)) {
+            const j = porId.get(id);
+            if (j.oabs.indexOf(oab.chave) < 0) j.oabs.push(oab.chave);
+            continue;
+          }
+          porId.set(id, montarPub(it, oab));
+          reg.novos++;
+        }
+        if (aoProgredir) aoProgredir(oab.rotulo + ' — repescando', reg.paginas, paginas, porId.size);
+      }
+      reg.pendentes = aindaFalta;
+      reg.erro = aindaFalta.length
+        ? aindaFalta.length + ' página(s) sem resposta mesmo após repescagem'
+        : null;
+    }
+
     coleta.oabs.push(reg);
     await esperar(300);
   }
