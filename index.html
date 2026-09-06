@@ -520,6 +520,18 @@
   }
   #execEstagio .chip, #execJulg .chip { font-size: .76rem; }
 
+  table.calor.fases td { text-align: center; vertical-align: middle; padding: .6rem .55rem; }
+  table.calor.fases td:first-child { text-align: left; }
+  .cel-fase .cel-nota {
+    margin-top: .25rem; font-size: .68rem; color: var(--texto-muted); white-space: nowrap;
+  }
+  .cel-leitura {
+    text-align: left !important; white-space: normal; max-width: 330px;
+    font-size: .76rem; line-height: 1.5; color: var(--texto-muted);
+  }
+  .cel-leitura b { color: var(--texto); }
+  .cel-leitura .fraco { font-style: italic; opacity: .8; }
+
   .rodape-djen {
     margin-top: 2rem; padding: 1rem 1.2rem; border-top: 1px solid var(--borda);
     font-size: .76rem; color: var(--texto-muted); line-height: 1.6; text-align: center;
@@ -1029,7 +1041,7 @@
 
     <section class="secao">
       <div class="secao-titulo">Onde a tese ganha e onde ela para</div>
-      <div class="secao-sub">Produto × julgamento. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência. Não são a mesma decisão, e a providência de cada uma é outra.</div>
+      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa conta <b>parcial como meio ganho</b>, por isso os três números aparecem separados: dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
       <div class="card"><div class="tabela-wrap"><div id="matrizProdutoFase"></div></div></div>
     </section>
 
@@ -1676,12 +1688,37 @@ const REGRAS_RECURSO = [
   ['Embargos infringentes',         /embargos infringentes/],
   ['Agravo',                        /\bagravo\b/]
 ];
-function tipoRecursoDe(classe, texto) {
+/* Só a classe processual. O texto de uma decisão cita recursos o tempo todo
+   ("caberá apelação", "mantida a sentença", "nos termos do agravo"), e usá-lo
+   fazia sentença de primeiro grau ser rotulada como apelação. */
+function tipoRecursoDe(classe) {
   const c = nrmDoc(classe);
+  if (!c) return null;
   for (const [nome, re] of REGRAS_RECURSO) if (re.test(c)) return nome;
-  const t = nrmDoc(String(texto || '').slice(0, 700));
-  for (const [nome, re] of REGRAS_RECURSO) if (re.test(t)) return nome;
   return null;
+}
+
+/* Órgão julgador de segundo grau. Câmara, turma, seção e relator não existem
+   em primeiro grau — e a vara, que existe, nunca casa com estes termos. */
+const RE_ORGAO_2G = /c[âa]mara|turma\s+recursal|turma\s+c[íi]vel|turma\s+julgadora|\bturma\b|se[çc][ãa]o\s+(?:c[íi]vel|especializada)|[óo]rg[ãa]o\s+especial|desembargador|relator|colegiado|corte\s+especial|vice-?presid|presid[êe]ncia\s+do\s+tribunal|gabinete\s+do\s+des/i;
+
+/* Últimos quatro dígitos do CNJ são a unidade de origem: 0000 é processo
+   originário do tribunal e 9000 é órgão de 2º grau dos juizados. Nenhum dos
+   dois é de primeiro grau, então nenhum dos dois produz sentença. */
+function origemDeSegundoGrau(numero) {
+  const d = String(numero || '').replace(/\D/g, '');
+  if (d.length !== 20) return false;
+  const o = d.slice(16);
+  return o === '0000' || o === '9000';
+}
+
+/* Grau em que a decisão foi proferida, por três sinais independentes e
+   nenhum deles vindo do texto. */
+function ehSegundoGrau(p) {
+  if (tipoRecursoDe(p.classe)) return true;
+  if (RE_ORGAO_2G.test(String(p.orgao || ''))) return true;
+  if (origemDeSegundoGrau(p.processo)) return true;
+  return false;
 }
 
 /* -------------------------------------------------------- dispositivo
@@ -1803,13 +1840,17 @@ function classificar(p) {
     }
   }
 
-  /* Julgamento: sentença, recurso ou liminar. Define a ordem em que as regras
-     de dispositivo são testadas e é o eixo pedido para a análise. */
-  const recurso = tipoRecursoDe(p.classe, p.texto);
-  const julgamento = ato === 'Sentença' ? 'Sentença'
+  /* Julgamento: sentença, recurso ou liminar. O GRAU decide antes do ato —
+     sentença é, por definição, a de primeiro grau. Um acórdão que mantém a
+     sentença recorrida escreve "sentença" em quase toda linha, e deixar o
+     texto mandar aqui produzia "Sentença" dentro de agravo de instrumento. */
+  const recurso = tipoRecursoDe(p.classe);
+  const segundoGrau = ehSegundoGrau(p);
+  const julgamento = ato === 'Decisão interlocutória' ? 'Liminar'
+                   : segundoGrau ? 'Recurso'
+                   : ato === 'Sentença' ? 'Sentença'
                    : ato === 'Acórdão' ? 'Recurso'
-                   : ato === 'Decisão interlocutória' ? 'Liminar'
-                   : (recurso ? 'Recurso' : 'Outros atos');
+                   : 'Outros atos';
 
   /* Dispositivo: só se afirma quando aparece escrito no texto. */
   const d = dispositivoDe(t, julgamento);
@@ -1839,7 +1880,7 @@ function classificar(p) {
     dispositivo = 'Sem dispositivo';
     detalhe = 'sigiloso — leitura obrigatória nos autos';
   }
-  return { ato, julgamento, recurso, dispositivo, resultado, detalhe, transitou,
+  return { ato, julgamento, recurso, segundoGrau, dispositivo, resultado, detalhe, transitou,
            prazoDias, contagem, exigePrazo,
            confianca: conf, temValor: semTexto ? false : temValor,
            valor: semTexto ? null : valor, valores, condenacao, semTexto };
@@ -1930,6 +1971,8 @@ async function coletar(ini, fim, aoProgredir) {
 function montarPub(it, oab) {
   const texto = limparHTML(it.texto);
   const cls = classificar({ texto: texto, classe: String(it.nomeClasse || ''),
+    orgao: String(it.nomeOrgao || ''),
+    processo: String(it.numeroprocessocommascara || it.numero_processo || ''),
     tipoComunicacao: it.tipoComunicacao, tipoDocumento: it.tipoDocumento });
   const d = tresDatas(it.data_disponibilizacao, cls.prazoDias);
   const cancelada = String(it.status || '').toUpperCase() === 'C' ||
@@ -1955,6 +1998,8 @@ function montarPub(it, oab) {
     disp: d.disp, pub: d.pub, inicioPrazo: d.inicio, fatal: d.fatal,
     ato: cls.ato, resultado: cls.resultado, detalhe: cls.detalhe,
     julgamento: cls.julgamento, recurso: cls.recurso, dispositivo: cls.dispositivo,
+    grau: cls.julgamento === 'Sentença' ? '1º grau'
+        : cls.julgamento === 'Recurso' ? '2º grau' : '—',
     transitou: cls.transitou, valores: cls.valores, condenacao: cls.condenacao,
     prazoDias: cls.prazoDias, contagem: cls.contagem, exigePrazo: cls.exigePrazo,
     confianca: cls.confianca, temValor: cls.temValor, valor: cls.valor,
@@ -3434,6 +3479,51 @@ function renderColeta(d) {
 }
 
 /* ===================================================================== CEO */
+/* A leitura compara as fases entre si. Quando a amostra é pequena demais para
+   comparar, ela diz isso em vez de inventar um padrão — três decisões viram
+   0% ou 100% por acaso, e uma frase de estratégia apoiada nisso custa caro. */
+/* Os três números precisam reconstruir a taxa exibida, senão a tabela pede
+   confiança em vez de permitir conferência: parcial pesa meio ganho, então
+   ela tem de aparecer separada de favorável. */
+function contagem(g) {
+  return '<div class="cel-nota"><b style="color:var(--verde)">' + num(g.ganhos) + '</b> fav · ' +
+    (g.parciais ? '<b style="color:var(--amarelo)">' + num(g.parciais) + '</b> parc · ' : '') +
+    '<b style="color:var(--vermelho)">' + num(g.perdas) + '</b> contra</div>';
+}
+
+function leituraDoProduto(porFase, geral) {
+  const [lim, sen, rec] = porFase;
+  const MIN = 5;
+  const t = arr => (arr.length >= MIN ? placar(arr).exito : null);
+  const eL = t(lim), eS = t(sen), eR = t(rec);
+
+  if (geral.total < MIN)
+    return '<span class="fraco">amostra pequena (' + geral.total + ' decisões) — sem leitura confiável</span>';
+
+  if (eL !== null && eS !== null) {
+    if (eL < 30 && eS >= 60)
+      return 'entra mal e ganha no mérito: a urgência não é reconhecida, mas a tese é. ' +
+             '<b>Reforçar a prova da urgência na inicial</b> — o resultado já vem.';
+    if (eL >= 60 && eS < 40)
+      return 'ganha a liminar e perde a sentença: a urgência convence, a prova não sustenta. ' +
+             '<b>Problema de instrução</b>, não de tese.';
+  }
+  if (eS !== null && eR !== null) {
+    if (eS >= 60 && eR < 40)
+      return 'vence em primeiro grau e perde no tribunal. <b>Rever a tese à luz do entendimento ' +
+             'da câmara</b> antes de contar com o êxito.';
+    if (eS < 40 && eR >= 60)
+      return 'perde na origem e reverte no tribunal: o primeiro grau não acompanha a tese. ' +
+             '<b>Recorrer é regra, não exceção</b>, neste produto.';
+  }
+  if (geral.exito !== null && geral.exito >= 60)
+    return 'ganha de forma consistente nas fases medidas. <b>Padrão a replicar</b> nos demais produtos.';
+  if (geral.exito !== null && geral.exito < 25)
+    return 'perde na maior parte das fases medidas. <b>Rever tese, seleção de casos ou instrução</b> ' +
+           'antes de ampliar o volume.';
+  return 'resultado misto, sem padrão claro entre as fases.';
+}
+
 function renderCeo(d, f) {
   const dec = f.filter(ehDecisao);
   const pl = placar(dec);
@@ -3474,26 +3564,35 @@ function renderCeo(d, f) {
         'O diário publicou e a planilha ainda não registrou. Processo ganho sem registro não vira execução.', 'alerta')
   });
 
-  /* produto × julgamento — onde a tese ganha e onde ela para */
+  /* Produto × fase, no formato do Controle de Publicações: taxa, favoráveis e
+     contrárias por célula, total e a leitura do padrão. A comparação entre as
+     fases é o que orienta providência — a taxa geral sozinha não orienta. */
+  const FASES = ['Liminar', 'Sentença', 'Recurso'];
   const prods = [...agrupar(dec, p => p.produto).entries()]
-    .sort((a, b) => b[1].length - a[1].length).slice(0, 10).map(x => x[0]);
-  const fases = ['Liminar', 'Sentença', 'Recurso'];
+    .sort((a, b) => b[1].length - a[1].length);
+
+  const cel = (itens) => {
+    if (!itens.length) return '<td class="cel-fase">—</td>';
+    const g = placar(itens);
+    return '<td class="cel-fase cel-calor" data-p="' + esc(itens[0].produto) + '" data-f="' +
+      esc(itens[0].julgamento) + '">' +
+      '<span class="tag-pct ' + classeExito(g.exito) + '">' + pct1(g.exito) + '</span>' +
+      contagem(g) + '</td>';
+  };
+
   document.getElementById('matrizProdutoFase').innerHTML = !dec.length
     ? '<div class="sem-vazio">Sem decisões no recorte.</div>'
-    : '<table class="calor"><thead><tr><th>Produto</th>' +
-      fases.map(x => '<th>' + x + '</th>').join('') + '<th>Geral</th></tr></thead><tbody>' +
-      prods.map(pr => {
-        const linha = fases.map(fa => {
-          const itens = dec.filter(p => p.produto === pr && p.julgamento === fa);
-          const g = placar(itens);
-          return '<td class="cel-calor" data-p="' + esc(pr) + '" data-f="' + esc(fa) + '"' +
-            (itens.length ? ' style="background:' + hexA(corExito(g.exito), .22) + '"' : '') + '>' +
-            (itens.length ? '<b>' + pct1(g.exito) + '</b><br><span style="font-size:.68rem;color:var(--texto-muted)">' +
-              itens.length + '</span>' : '—') + '</td>';
-        }).join('');
-        const ger = placar(dec.filter(p => p.produto === pr));
-        return '<tr><td><b>' + esc(pr) + '</b></td>' + linha +
-          '<td><span class="tag-pct ' + classeExito(ger.exito) + '">' + pct1(ger.exito) + '</span></td></tr>';
+    : '<table class="calor fases"><thead><tr><th>Produto</th>' +
+      FASES.map(x => '<th>' + x + '</th>').join('') +
+      '<th>Total</th><th style="text-align:left">Leitura</th></tr></thead><tbody>' +
+      prods.map(([nome, itens]) => {
+        const porFase = FASES.map(fa => itens.filter(p => p.julgamento === fa));
+        const ger = placar(itens);
+        return '<tr><td style="white-space:normal;max-width:200px"><b>' + esc(nome) + '</b></td>' +
+          porFase.map(cel).join('') +
+          '<td class="cel-fase"><span class="tag-pct ' + classeExito(ger.exito) + '">' + pct1(ger.exito) +
+          '</span>' + contagem(ger) + '</td>' +
+          '<td class="cel-leitura">' + leituraDoProduto(porFase, ger) + '</td></tr>';
       }).join('') + '</tbody></table>';
 
   document.querySelectorAll('#matrizProdutoFase .cel-calor').forEach(c => {
