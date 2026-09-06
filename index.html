@@ -1041,7 +1041,7 @@
 
     <section class="secao">
       <div class="secao-titulo">Onde a tese ganha e onde ela para</div>
-      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa conta <b>parcial como meio ganho</b>, por isso os três números aparecem separados: dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
+      <div class="secao-sub">Produto × fase. Um produto que ganha liminar e perde sentença tem problema de prova; um que perde liminar e ganha sentença tem problema de urgência — não são a mesma decisão, e a providência de cada uma é outra. A taxa é o <b>índice de procedência</b>: só procedente, parcialmente procedente e improcedente entram no denominador, e parcial pesa meio ganho. <b>Extinção</b> (ext) e <b>acordo homologado</b> (acordo) aparecem na contagem e no total, mas ficam fora do índice — não houve julgamento do pedido. Com os números separados dá para refazer a conta. Clique numa célula para abrir as decisões.</div>
       <div class="card"><div class="tabela-wrap"><div id="matrizProdutoFase"></div></div></div>
     </section>
 
@@ -1729,31 +1729,38 @@ const REGRAS_DISPOSITIVO = [
   /* Ancoradas no verbo do dispositivo. "improcedência" solta aparece em citação
      de jurisprudência e em alegação afastada — contar isso como derrota
      inverte o índice. "procedente em parte" é a forma mais comum do parcial. */
-  ['Parcialmente procedente',     /parcialmente\s+proced|proced[êe]ncia\s+parcial|proceden\w*\s+em\s+parte|em\s+parte\s+proceden|julgo\s+proceden\w*\s+em\s+parte/i, 'Parcial'],
+  ['Parcialmente procedente',     /parcialmente\s+proced|\bproced[êe]ncia\s+parcial|proceden\w*\s+em\s+parte|em\s+parte\s+proceden|julgo\s+proceden\w*\s+em\s+parte/i, 'Parcial'],
   ['Improcedente',                /julg\w+\s+(?:totalmente\s+)?improcedente|improcedentes?\s+os?\s+pedidos?|improced[êe]ncia\s+d[oa]s?\s+pedid|pedidos?\s+.{0,20}improcedentes?/i, 'Desfavorável'],
-  ['Procedente',                  /julg\w+\s+(?:totalmente\s+)?procedente|procedentes?\s+os?\s+pedidos?|proced[êe]ncia\s+d[oa]s?\s+pedid|pedidos?\s+.{0,20}\bprocedentes?\b/i, 'Favorável'],
+  ['Procedente',                  /julg\w+\s+(?:totalmente\s+)?procedente|\bprocedentes?\s+os?\s+pedidos?|\bproced[êe]ncia\s+d[oa]s?\s+pedid|pedidos?\s+.{0,20}\bprocedentes?\b/i, 'Favorável'],
   ['Acordo homologado',           /homolog\w*\s+(?:o\s+|a\s+)?(?:acordo|transa[çc][ãa]o)|acordo\s+[^.]{0,30}homolog/i,  'Favorável'],
   ['Extinção do processo',        /extin[çc]\w+\s+d[oa]\s+(?:processo|feito)|julgo\s+extint|extingo\s+o\s+(?:processo|feito)|art\.?\s*485/i, 'Neutro'],
   ['Recurso parcialmente provido',/parcial\s+provimento|provimento\s+parcial|provejo\s+parcialmente/i,                  'Parcial'],
   ['Recurso não provido',         /nego\s+provimento|negar\s+provimento|improvido|desprovi|nego\s+seguimento|mantida\s+a\s+senten/i, 'Desfavorável'],
-  ['Recurso provido',             /dou\s+provimento|dar\s+provimento|d[êe]-se\s+provimento|provimento\s+ao\s+recurso|reformo\s+a\s+senten/i, 'Favorável'],
+  ['Recurso provido',             /\bdou\s+provimento|\bdar\s+provimento|d[êe]-se\s+provimento|provimento\s+ao\s+recurso|reformo\s+a\s+senten/i, 'Favorável'],
   /* "pedido" sozinho não serve: "defiro o pedido de dilação de prazo" e
      "defiro o pedido de gratuidade" não são liminar, e estavam entrando como
      resultado favorável. Exige-se a palavra que caracteriza a tutela. */
-  ['Liminar deferida',            /(?:defiro|concedo)\s+(?:parcialmente\s+)?(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Favorável'],
-  ['Liminar indeferida',          /(?:indefiro|denego)\s+(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Desfavorável']
+  ['Liminar deferida',            /\b(?:defiro|concedo)\s+(?:parcialmente\s+)?(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Favorável'],
+  ['Liminar indeferida',          /\b(?:indefiro|denego)\s+(?:a\s+|o\s+)?(?:tutela|liminar|antecipa[çc][ãa]o|medida\s+liminar|pedido\s+liminar|pedido\s+de\s+tutela|seguran[çc]a)/i, 'Desfavorável']
 ];
 
-/* A ordem de teste muda conforme o julgamento: num acórdão que diz "mantida a
-   sentença de improcedência", o que se decidiu foi o recurso, não o mérito
-   original — testar as regras de recurso primeiro evita rotular errado. */
+/* Cada fase só admite os dispositivos que ela própria pode produzir. Isto é
+   restrição, não ordem de preferência: uma sentença de primeiro grau que
+   escreve "confirmo a tutela" ou cita "nego provimento aos embargos" não
+   decidiu liminar nem recurso, e emprestar esse rótulo inventaria um resultado
+   que ninguém proferiu.
+
+   Sentença resolve o mérito. Recurso decide o recurso. Liminar defere ou
+   indefere. Sem dispositivo da própria fase no texto, a publicação fica "Sem
+   dispositivo" e sai da análise — é o que a leitura de fato permite afirmar. */
 const ORDEM_DISP = {
+  'Sentença': ['Parcialmente procedente', 'Improcedente', 'Procedente',
+               'Acordo homologado', 'Extinção do processo'],
   'Recurso':  ['Recurso parcialmente provido', 'Recurso não provido', 'Recurso provido',
-               'Parcialmente procedente', 'Improcedente', 'Procedente',
-               'Acordo homologado', 'Extinção do processo', 'Liminar deferida', 'Liminar indeferida'],
-  'Liminar':  ['Liminar deferida', 'Liminar indeferida', 'Parcialmente procedente', 'Improcedente',
-               'Procedente', 'Extinção do processo', 'Acordo homologado',
-               'Recurso parcialmente provido', 'Recurso não provido', 'Recurso provido'],
+               'Acordo homologado'],
+  'Liminar':  ['Liminar deferida', 'Liminar indeferida'],
+  /* Despacho, ato ordinatório e afins não têm fase própria; ali qualquer
+     dispositivo escrito no texto vale, porque é o único sinal que existe. */
   'padrao':   ['Parcialmente procedente', 'Improcedente', 'Procedente', 'Acordo homologado',
                'Extinção do processo', 'Recurso parcialmente provido', 'Recurso não provido',
                'Recurso provido', 'Liminar deferida', 'Liminar indeferida']
@@ -2244,15 +2251,27 @@ const DISPOSITIVOS_SENTENCA = ['Procedente', 'Parcialmente procedente', 'Improce
 const DISPOSITIVOS_RECURSO  = ['Recurso provido', 'Recurso parcialmente provido', 'Recurso não provido'];
 const DISPOSITIVOS_LIMINAR  = ['Liminar deferida', 'Liminar indeferida'];
 
-/* Placar de um conjunto: ganhos, parciais, perdas e o êxito. O êxito conta
-   parcial como meio ganho — parcialmente procedente não é derrota, mas também
-   não é a vitória que se vendeu ao cliente. */
+/* Fora do índice de procedência, dentro do total.
+
+   Extinção do processo não julgou o pedido: o processo acabou sem mérito, e
+   somá-la ao índice mediria outra coisa. Acordo homologado encerra com receita
+   mas também não é procedência — ninguém julgou. Os dois continuam contados e
+   exibidos, porque dizem muito sobre a carteira; só não entram na conta do
+   êxito. */
+const FORA_DO_INDICE = ['Extinção do processo', 'Acordo homologado'];
+
+/* Placar: ganhos, parciais, perdas e o êxito sobre o mérito julgado. O êxito
+   conta parcial como meio ganho — parcialmente procedente não é derrota, mas
+   também não é a vitória que se vendeu ao cliente. */
 function placar(itens) {
-  const g = itens.filter(p => p.resultado === 'Favorável').length;
-  const pa = itens.filter(p => p.resultado === 'Parcial').length;
-  const pe = itens.filter(p => p.resultado === 'Desfavorável').length;
+  const merito = itens.filter(p => FORA_DO_INDICE.indexOf(p.dispositivo) < 0);
+  const g = merito.filter(p => p.resultado === 'Favorável').length;
+  const pa = merito.filter(p => p.resultado === 'Parcial').length;
+  const pe = merito.filter(p => p.resultado === 'Desfavorável').length;
   const base = g + pa + pe;
   return { total: itens.length, ganhos: g, parciais: pa, perdas: pe,
+           extincoes: itens.filter(p => p.dispositivo === 'Extinção do processo').length,
+           acordos: itens.filter(p => p.dispositivo === 'Acordo homologado').length,
            exito: base ? (g + pa * 0.5) / base * 100 : null };
 }
 
@@ -2494,7 +2513,8 @@ function renderSentencas(f) {
     itemResumo('Acordo homologado', num(por('Acordo homologado').length),
       'encerra com receita, sem risco de recurso', COR_CIANO),
     itemResumo('Procedência sobre o mérito', merito ? pct1(proc / merito * 100) : '—',
-      merito ? num(merito) + ' sentenças de mérito' : 'nada julgado no mérito', corExito(merito ? proc / merito * 100 : null))
+      merito ? num(merito) + ' sentenças de mérito · extinção e acordo fora do índice'
+             : 'nada julgado no mérito', corExito(merito ? proc / merito * 100 : null))
   ].join('');
 
   /* Volume por mês, empilhado por resultado: mostra ao mesmo tempo se o
@@ -3499,7 +3519,9 @@ function renderColeta(d) {
 function contagem(g) {
   return '<div class="cel-nota"><b style="color:var(--verde)">' + num(g.ganhos) + '</b> fav · ' +
     (g.parciais ? '<b style="color:var(--amarelo)">' + num(g.parciais) + '</b> parc · ' : '') +
-    '<b style="color:var(--vermelho)">' + num(g.perdas) + '</b> contra</div>';
+    '<b style="color:var(--vermelho)">' + num(g.perdas) + '</b> contra' +
+    (g.extincoes ? ' · <b>' + num(g.extincoes) + '</b> ext' : '') +
+    (g.acordos ? ' · <b>' + num(g.acordos) + '</b> acordo' : '') + '</div>';
 }
 
 function leituraDoProduto(porFase, geral, fases) {
