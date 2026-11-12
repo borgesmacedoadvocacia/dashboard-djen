@@ -2215,7 +2215,7 @@ async function lerClientes() {
 
 async function lerProcessos() {
   try {
-    const r = await lerAbas(["'" + ABA_BASE + "'!A2:M4000", "'" + ABA_BASE + "'!P2:AH4000"]);
+    const r = await lerAbas(["'" + ABA_BASE + "'!A2:M", "'" + ABA_BASE + "'!P2:AH"]);
     const A = r[0] || [], B = r[1] || [];
     const m = new Map();
     for (let i = 0; i < A.length; i++) {
